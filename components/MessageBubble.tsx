@@ -145,9 +145,9 @@ export default function MessageBubble({
               <span>View agentic thinking steps</span>
             </summary>
             <div className="mt-2 pl-6 border-l-2 border-white/10 text-xs text-slate-500 space-y-2">
-              <p className="flex items-center gap-2"><div className="h-1.5 w-1.5 rounded-full bg-cyan-400 animate-pulse"></div> Parsed user query intent.</p>
-              <p className="flex items-center gap-2"><div className="h-1.5 w-1.5 rounded-full bg-cyan-400 animate-pulse delay-75"></div> Retrieved {sources.length} relevant chunks from the vector index.</p>
-              <p className="flex items-center gap-2"><div className="h-1.5 w-1.5 rounded-full bg-cyan-400 animate-pulse delay-150"></div> Cross-referencing evidence and synthesizing response.</p>
+              <div className="flex items-center gap-2"><span className="block h-1.5 w-1.5 shrink-0 rounded-full bg-cyan-400 animate-pulse"></span> Parsed user query intent.</div>
+              <div className="flex items-center gap-2"><span className="block h-1.5 w-1.5 shrink-0 rounded-full bg-cyan-400 animate-pulse delay-75"></span> Retrieved {sources.length} relevant chunks from the vector index.</div>
+              <div className="flex items-center gap-2"><span className="block h-1.5 w-1.5 shrink-0 rounded-full bg-cyan-400 animate-pulse delay-150"></span> Cross-referencing evidence and synthesizing response.</div>
             </div>
           </details>
         )}
