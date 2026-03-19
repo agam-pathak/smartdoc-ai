@@ -654,9 +654,7 @@ export default function ChatBox({
       <ChatHeader
         documents={documents}
         selectedDocumentId={selectedDocumentId}
-        selectedDocument={selectedDocument}
         searchMode={searchMode}
-        conversationSummaries={conversationSummaries}
         activeConversation={activeConversation}
         canAskQuestion={canAskQuestion}
         promptChips={promptChips}
@@ -669,7 +667,6 @@ export default function ChatBox({
       <ThreadHistory
         conversationSummaries={conversationSummaries}
         selectedConversationId={selectedConversationId}
-        searchMode={searchMode}
         loadingConversations={loadingConversations}
         deletingConversationId={deletingConversationId}
         conversationScopeId={conversationScopeId}
@@ -712,7 +709,6 @@ export default function ChatBox({
         question={question}
         searchMode={searchMode}
         selectedDocument={selectedDocument}
-        activeConversation={activeConversation}
         canAskQuestion={canAskQuestion}
         loading={loading}
         conversationError={conversationError}
