@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-const SESSION_COOKIE_NAME = "smartdoc_session";
+const SESSION_COOKIE_NAME = "lexora_session";
 
 /**
  * Lightweight cookie-presence check at the edge.
@@ -22,7 +22,7 @@ const PROTECTED_PATHS = [
   "/api/conversations",
 ];
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   const isProtected = PROTECTED_PATHS.some(

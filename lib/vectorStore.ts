@@ -23,7 +23,7 @@ import {
   resolveUserManifestPath,
   resolveUserUploadUrl,
   resolveUserUploadsRoot,
-  SMARTDOC_ROOT,
+  LEXORA_ROOT,
 } from "@/lib/storage";
 import type {
   IndexedDocument,
@@ -496,5 +496,5 @@ export async function indexUntrackedUploads(userId: string) {
   return newlyIndexedDocuments;
 }
 
-export const VECTOR_STORE_ROOT = SMARTDOC_ROOT;
+export const VECTOR_STORE_ROOT = LEXORA_ROOT;
 export const LEGACY_UPLOADS_DIRECTORY = LEGACY_UPLOADS_ROOT;

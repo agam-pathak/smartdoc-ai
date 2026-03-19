@@ -8,7 +8,7 @@ export const LOCAL_EMBEDDING_MODEL = "local-hash-v1";
 
 const EMBEDDING_BATCH_SIZE = 16;
 const LOCAL_EMBEDDING_DIMENSIONS = 768;
-const EMBEDDINGS_PROVIDER = process.env.SMARTDOC_EMBEDDINGS_PROVIDER ?? "auto";
+const EMBEDDINGS_PROVIDER = process.env.LEXORA_EMBEDDINGS_PROVIDER ?? "auto";
 
 let groqClient: Groq | null = null;
 let groqEmbeddingAccess: boolean | null =
@@ -168,7 +168,7 @@ function logLocalFallback(error?: unknown) {
       : "Groq embeddings are not available for this account.";
 
   console.warn(
-    `SmartDoc embeddings fallback: using ${LOCAL_EMBEDDING_MODEL} because ${reason}`,
+    `Lexora embeddings fallback: using ${LOCAL_EMBEDDING_MODEL} because ${reason}`,
   );
 }
 
