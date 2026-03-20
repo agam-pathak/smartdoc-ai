@@ -13,6 +13,7 @@ import path from "node:path";
 import { chunkText } from "@/lib/chunkText";
 import { embedTexts } from "@/lib/embeddings";
 import { withFileLock } from "@/lib/file-lock";
+import { getSupabaseAdminClient, isSupabaseConfigured, SUPABASE_TABLES } from "@/lib/supabase";
 
 import {
   ensurePrivateUploadAvailable,
@@ -42,6 +43,23 @@ type DocumentIndexFile = {
 type ManifestFile = {
   documents: IndexedDocument[];
   updatedAt: string;
+};
+
+type DocumentRow = {
+  id: string;
+  user_id: string;
+  name: string;
+  file_name: string;
+  file_url: string;
+  size_bytes: number;
+  page_count: number;
+  chunk_count: number;
+  indexed_at: string;
+  embedding_model: string;
+  extraction_mode: string | null;
+  notes: string | null;
+  bookmarked_pages: number[] | null;
+  last_opened_at: string | null;
 };
 
 type IndexDocumentInput = {
@@ -142,6 +160,151 @@ async function readJsonFile<T>(filePath: string, fallback: T) {
 }
 
 async function writeUserManifest(userId: string, documents: IndexedDocument[]) {
+  if (isSupabaseConfigured()) {
+    await writeUserManifestToSupabase(userId, documents);
+    return;
+  }
+
+  await writeUserManifestToFile(userId, documents);
+}
+
+function fromDocumentRow(row: DocumentRow): IndexedDocument {
+  return {
+    id: row.id,
+    name: row.name,
+    fileName: row.file_name,
+    fileUrl: row.file_url,
+    sizeBytes: row.size_bytes,
+    pageCount: row.page_count,
+    chunkCount: row.chunk_count,
+    indexedAt: row.indexed_at,
+    embeddingModel: row.embedding_model,
+    extractionMode: (row.extraction_mode as IndexedDocument["extractionMode"]) ?? "text",
+    notes: row.notes ?? "",
+    bookmarkedPages: Array.isArray(row.bookmarked_pages) ? row.bookmarked_pages : [],
+    lastOpenedAt: row.last_opened_at ?? undefined,
+  };
+}
+
+function toDocumentRow(userId: string, document: IndexedDocument): DocumentRow {
+  return {
+    id: document.id,
+    user_id: userId,
+    name: document.name,
+    file_name: document.fileName,
+    file_url: document.fileUrl,
+    size_bytes: document.sizeBytes,
+    page_count: document.pageCount,
+    chunk_count: document.chunkCount,
+    indexed_at: document.indexedAt,
+    embedding_model: document.embeddingModel,
+    extraction_mode: document.extractionMode ?? "text",
+    notes: document.notes ?? "",
+    bookmarked_pages: document.bookmarkedPages ?? [],
+    last_opened_at: document.lastOpenedAt ?? null,
+  };
+}
+
+async function readUserManifestFromFile(userId: string) {
+  return readJsonFile<ManifestFile>(resolveUserManifestPath(userId), {
+    documents: [],
+    updatedAt: "",
+  });
+}
+
+async function loadSupabaseDocumentRows(userId: string) {
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from(SUPABASE_TABLES.documents)
+    .select("*")
+    .eq("user_id", userId)
+    .order("indexed_at", { ascending: false });
+
+  if (error) {
+    throw error;
+  }
+
+  return (data as DocumentRow[] | null) ?? [];
+}
+
+async function readUserManifestFromSupabase(userId: string) {
+  let rows = await loadSupabaseDocumentRows(userId);
+
+  if (rows.length === 0) {
+    const fileManifest = await readUserManifestFromFile(userId);
+
+    if (fileManifest.documents.length > 0) {
+      await writeUserManifestToSupabase(userId, fileManifest.documents);
+      rows = await loadSupabaseDocumentRows(userId);
+    }
+  }
+
+  return {
+    documents: rows.map((row) => fromDocumentRow(row)),
+    updatedAt: rows[0]?.indexed_at ?? "",
+  };
+}
+
+async function writeUserManifestToSupabase(userId: string, documents: IndexedDocument[]) {
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    return;
+  }
+
+  const normalizedDocuments = [...documents].sort(
+    (left, right) =>
+      Date.parse(right.indexedAt || "") - Date.parse(left.indexedAt || ""),
+  );
+  const documentIds = normalizedDocuments.map((document) => document.id);
+
+  if (documentIds.length === 0) {
+    const { error: deleteAllError } = await supabase
+      .from(SUPABASE_TABLES.documents)
+      .delete()
+      .eq("user_id", userId);
+
+    if (deleteAllError) {
+      throw deleteAllError;
+    }
+
+    return;
+  }
+
+  const existingRows = await loadSupabaseDocumentRows(userId);
+  const idsToDelete = existingRows
+    .map((document) => document.id)
+    .filter((documentId) => !documentIds.includes(documentId));
+
+  if (idsToDelete.length > 0) {
+    const { error: deleteError } = await supabase
+      .from(SUPABASE_TABLES.documents)
+      .delete()
+      .in("id", idsToDelete);
+
+    if (deleteError) {
+      throw deleteError;
+    }
+  }
+
+  const { error: upsertError } = await supabase
+    .from(SUPABASE_TABLES.documents)
+    .upsert(
+      normalizedDocuments.map((document) => toDocumentRow(userId, document)),
+      { onConflict: "id" },
+    );
+
+  if (upsertError) {
+    throw upsertError;
+  }
+}
+
+async function writeUserManifestToFile(userId: string, documents: IndexedDocument[]) {
   const manifestPath = resolveUserManifestPath(userId);
 
   await withFileLock(manifestPath, async () => {
@@ -162,10 +325,11 @@ async function writeUserManifest(userId: string, documents: IndexedDocument[]) {
 }
 
 async function readUserManifest(userId: string) {
-  return readJsonFile<ManifestFile>(resolveUserManifestPath(userId), {
-    documents: [],
-    updatedAt: "",
-  });
+  if (isSupabaseConfigured()) {
+    return readUserManifestFromSupabase(userId);
+  }
+
+  return readUserManifestFromFile(userId);
 }
 
 async function readLegacyManifest() {

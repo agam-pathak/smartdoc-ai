@@ -12,6 +12,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { withFileLock } from "@/lib/file-lock";
+import { getSupabaseAdminClient, isSupabaseConfigured, SUPABASE_TABLES } from "@/lib/supabase";
 import type { AuthSession } from "@/lib/types";
 import { ensureLexoraRoot, LEXORA_ROOT } from "@/lib/storage";
 
@@ -26,6 +27,19 @@ type StoredUser = {
   lastLoginAt?: string;
   resetTokenHash?: string;
   resetTokenExpiresAt?: string;
+};
+
+type StoredUserRow = {
+  id: string;
+  name: string;
+  email: string;
+  password_hash: string;
+  password_salt: string;
+  created_at: string;
+  updated_at: string;
+  last_login_at: string | null;
+  reset_token_hash: string | null;
+  reset_token_expires_at: string | null;
 };
 
 type UsersStore = {
@@ -155,7 +169,37 @@ function createSessionFromUser(user: StoredUser): AuthSession {
   };
 }
 
-async function readUsersStore() {
+function fromStoredUserRow(row: StoredUserRow): StoredUser {
+  return {
+    id: row.id,
+    name: row.name,
+    email: row.email,
+    passwordHash: row.password_hash,
+    passwordSalt: row.password_salt,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    lastLoginAt: row.last_login_at ?? undefined,
+    resetTokenHash: row.reset_token_hash ?? undefined,
+    resetTokenExpiresAt: row.reset_token_expires_at ?? undefined,
+  };
+}
+
+function toStoredUserRow(user: StoredUser): StoredUserRow {
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    password_hash: user.passwordHash,
+    password_salt: user.passwordSalt,
+    created_at: user.createdAt,
+    updated_at: user.updatedAt,
+    last_login_at: user.lastLoginAt ?? null,
+    reset_token_hash: user.resetTokenHash ?? null,
+    reset_token_expires_at: user.resetTokenExpiresAt ?? null,
+  };
+}
+
+async function readUsersStoreFromFile() {
   try {
     const contents = await readFile(USERS_PATH, "utf8");
     const store = JSON.parse(contents) as UsersStore;
@@ -180,7 +224,7 @@ async function readUsersStore() {
   }
 }
 
-async function writeUsersStore(users: StoredUser[]) {
+async function writeUsersStoreToFile(users: StoredUser[]) {
   await withFileLock(USERS_PATH, async () => {
     await ensureLexoraRoot();
     await mkdir(path.dirname(USERS_PATH), { recursive: true });
@@ -194,8 +238,107 @@ async function writeUsersStore(users: StoredUser[]) {
   });
 }
 
+async function findSupabaseUserById(userId: string) {
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    return null;
+  }
+
+  const { data, error } = await supabase
+    .from(SUPABASE_TABLES.users)
+    .select("*")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  return data ? fromStoredUserRow(data as StoredUserRow) : null;
+}
+
+async function findSupabaseUserByEmail(email: string) {
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    return null;
+  }
+
+  const { data, error } = await supabase
+    .from(SUPABASE_TABLES.users)
+    .select("*")
+    .eq("email", normalizeEmail(email))
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  return data ? fromStoredUserRow(data as StoredUserRow) : null;
+}
+
+async function backfillUserToSupabase(user: StoredUser) {
+  const supabase = getSupabaseAdminClient();
+
+  if (!supabase) {
+    return user;
+  }
+
+  const { data, error } = await supabase
+    .from(SUPABASE_TABLES.users)
+    .upsert(toStoredUserRow(user), { onConflict: "id" })
+    .select("*")
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  return fromStoredUserRow(data as StoredUserRow);
+}
+
 async function updateUser(userId: string, updater: (user: StoredUser) => StoredUser) {
-  const store = await readUsersStore();
+  if (isSupabaseConfigured()) {
+    const existingUser =
+      (await findSupabaseUserById(userId)) ??
+      (await (async () => {
+        const store = await readUsersStoreFromFile();
+        const fileUser = store.users.find((user) => user.id === userId) ?? null;
+
+        if (!fileUser) {
+          return null;
+        }
+
+        return backfillUserToSupabase(fileUser);
+      })());
+
+    if (!existingUser) {
+      return null;
+    }
+
+    const nextUser = updater(existingUser);
+    const supabase = getSupabaseAdminClient();
+
+    if (!supabase) {
+      return null;
+    }
+
+    const { data, error } = await supabase
+      .from(SUPABASE_TABLES.users)
+      .update(toStoredUserRow(nextUser))
+      .eq("id", userId)
+      .select("*")
+      .single();
+
+    if (error) {
+      throw error;
+    }
+
+    return fromStoredUserRow(data as StoredUserRow);
+  }
+
+  const store = await readUsersStoreFromFile();
   const userIndex = store.users.findIndex((user) => user.id === userId);
 
   if (userIndex < 0) {
@@ -204,18 +347,51 @@ async function updateUser(userId: string, updater: (user: StoredUser) => StoredU
 
   const nextUsers = [...store.users];
   nextUsers[userIndex] = updater(nextUsers[userIndex]);
-  await writeUsersStore(nextUsers);
+  await writeUsersStoreToFile(nextUsers);
   return nextUsers[userIndex];
 }
 
 export async function getUsersCount() {
-  const store = await readUsersStore();
+  if (isSupabaseConfigured()) {
+    const supabase = getSupabaseAdminClient();
+
+    if (!supabase) {
+      return 0;
+    }
+
+    const { count, error } = await supabase
+      .from(SUPABASE_TABLES.users)
+      .select("*", { count: "exact", head: true });
+
+    if (error) {
+      throw error;
+    }
+
+    return count ?? 0;
+  }
+
+  const store = await readUsersStoreFromFile();
   return store.users.length;
 }
 
 export async function findUserByEmail(email: string) {
   const normalizedEmail = normalizeEmail(email);
-  const store = await readUsersStore();
+
+  if (isSupabaseConfigured()) {
+    const supabaseUser = await findSupabaseUserByEmail(normalizedEmail);
+
+    if (supabaseUser) {
+      return supabaseUser;
+    }
+
+    const store = await readUsersStoreFromFile();
+    const fileUser =
+      store.users.find((user) => user.email === normalizedEmail) ?? null;
+
+    return fileUser ? backfillUserToSupabase(fileUser) : null;
+  }
+
+  const store = await readUsersStoreFromFile();
   return store.users.find((user) => user.email === normalizedEmail) ?? null;
 }
 
@@ -239,8 +415,13 @@ export async function createUser({ name, email, password }: CreateUserInput) {
     updatedAt: now,
   };
 
-  const store = await readUsersStore();
-  await writeUsersStore([user, ...store.users]);
+  if (isSupabaseConfigured()) {
+    await backfillUserToSupabase(user);
+    return user;
+  }
+
+  const store = await readUsersStoreFromFile();
+  await writeUsersStoreToFile([user, ...store.users]);
   return user;
 }
 
@@ -303,7 +484,70 @@ export async function createPasswordReset(email: string) {
 
 export async function resetPasswordWithToken(token: string, password: string) {
   const tokenHash = hashResetToken(token);
-  const store = await readUsersStore();
+
+  if (isSupabaseConfigured()) {
+    const supabase = getSupabaseAdminClient();
+
+    if (!supabase) {
+      return null;
+    }
+
+    const nowIso = new Date().toISOString();
+    const { data, error } = await supabase
+      .from(SUPABASE_TABLES.users)
+      .select("*")
+      .eq("reset_token_hash", tokenHash)
+      .gt("reset_token_expires_at", nowIso)
+      .maybeSingle();
+
+    if (error) {
+      throw error;
+    }
+
+    if (!data) {
+      const store = await readUsersStoreFromFile();
+      const now = Date.now();
+      const fileUser = store.users.find(
+        (user) =>
+          user.resetTokenHash === tokenHash &&
+          user.resetTokenExpiresAt &&
+          Date.parse(user.resetTokenExpiresAt) > now,
+      );
+
+      if (!fileUser) {
+        return null;
+      }
+
+      await backfillUserToSupabase(fileUser);
+      return resetPasswordWithToken(token, password);
+    }
+
+    const existingUser = fromStoredUserRow(data as StoredUserRow);
+    const salt = randomBytes(16).toString("hex");
+    const nextUser: StoredUser = {
+      ...existingUser,
+      passwordSalt: salt,
+      passwordHash: hashPassword(password, salt),
+      resetTokenHash: undefined,
+      resetTokenExpiresAt: undefined,
+      updatedAt: nowIso,
+    };
+
+    const { data: updatedUser, error: updateError } = await supabase
+      .from(SUPABASE_TABLES.users)
+      .update(toStoredUserRow(nextUser))
+      .eq("id", existingUser.id)
+      .select("*")
+      .single();
+
+    if (updateError) {
+      throw updateError;
+    }
+
+    return fromStoredUserRow(updatedUser as StoredUserRow);
+  }
+
+  const store = await readUsersStoreFromFile();
   const now = Date.now();
   const userIndex = store.users.findIndex(
     (user) =>
@@ -327,7 +571,7 @@ export async function resetPasswordWithToken(token: string, password: string) {
     updatedAt: new Date().toISOString(),
   };
 
-  await writeUsersStore(nextUsers);
+  await writeUsersStoreToFile(nextUsers);
   return nextUsers[userIndex];
 }
 
