@@ -102,12 +102,24 @@ export default function MessageBubble({
                   {index + 1}
                 </span>
                 <div className="min-w-0 max-w-[180px]">
-                  <span className="block truncate text-[11px] font-medium text-slate-300">
-                    {formatPageRange(source.pageStart, source.pageEnd)}
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="block truncate text-[11px] font-medium text-slate-300">
+                      {formatPageRange(source.pageStart, source.pageEnd)}
+                    </span>
+                    {source.documentRank ? (
+                      <span className="rounded-full bg-white/[0.04] px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-slate-500">
+                        #{source.documentRank}
+                      </span>
+                    ) : null}
+                  </div>
                   <span className="line-clamp-2 text-[10px] leading-snug text-slate-500">
                     {source.excerpt}
                   </span>
+                  {source.documentHitCount ? (
+                    <span className="mt-1 block text-[9px] uppercase tracking-wider text-slate-600">
+                      {source.documentHitCount} hits in doc
+                    </span>
+                  ) : null}
                 </div>
               </button>
             ))}
@@ -170,25 +182,25 @@ export default function MessageBubble({
         </ReactMarkdown>
       </div>
 
-      {/* ── Agentic Thinking Process ── */}
+      {/* ── Grounding Flow ── */}
       {sources.length > 0 && highlight && (
         <details className="rounded-lg border border-white/[0.06] bg-white/[0.02]">
           <summary className="flex cursor-pointer items-center gap-2 px-3 py-2 text-[11px] font-medium text-slate-400 transition hover:text-cyan-300 [&>svg]:transition-transform [&[open]>svg]:rotate-90 list-none">
             <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-            Agentic Thinking Process (Expanded)
+            Grounding & Response Flow
           </summary>
           <div className="space-y-2 border-t border-white/[0.04] px-3 py-3">
             <div className="flex items-start gap-2 text-[11px] text-slate-400">
               <span className="mt-0.5 font-mono text-cyan-400/80">1.</span>
-              Identified core question (intent classification)
+              Retrieved the closest document chunks for the current question
             </div>
             <div className="flex items-start gap-2 text-[11px] text-slate-400">
               <span className="mt-0.5 font-mono text-cyan-400/80">2.</span>
-              Analyzed relevant sections from the document index
+              Carried recent thread context forward when available
             </div>
             <div className="flex items-start gap-2 text-[11px] text-slate-400">
               <span className="mt-0.5 font-mono text-cyan-400/80">3.</span>
-              Synthesized obligations for the query across {sources.length} chunks
+              Synthesized the answer across {sources.length} retrieved chunks
             </div>
             <div className="flex items-start gap-2 text-[11px] text-slate-400">
               <span className="mt-0.5 font-mono text-cyan-400/80">4.</span>

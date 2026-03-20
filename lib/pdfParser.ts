@@ -11,6 +11,7 @@ type ParsedPdfDocument = {
   text: string;
   pageCount: number;
   pages: ParsedPdfPage[];
+  extractionMode: "text" | "ocr-recommended";
 };
 
 let didConfigurePdfWorker = false;
@@ -80,17 +81,27 @@ export async function parsePdfFile(filePath: string): Promise<ParsedPdfDocument>
     const text = normalizeExtractedText(
       pages.map((page) => page.text).join("\n\n") || result.text || "",
     );
+    const averageCharactersPerPage =
+      pages.length > 0 ? text.length / pages.length : text.length;
+    const extractionMode =
+      text.length === 0 || averageCharactersPerPage < 80
+        ? "ocr-recommended"
+        : "text";
 
     return {
       text,
       pageCount: result.total || pages.length,
+      extractionMode,
       pages:
         pages.length > 0
           ? pages
           : [
               {
                 pageNumber: 1,
-                text,
+                text:
+                  extractionMode === "ocr-recommended"
+                    ? "This PDF appears to contain image-based or scanned pages. OCR is recommended before grounded answers can extract detailed content."
+                    : text,
               },
             ],
     };

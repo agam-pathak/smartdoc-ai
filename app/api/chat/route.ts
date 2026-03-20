@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { ALL_DOCUMENTS_SCOPE_ID } from "@/lib/chat-constants";
 import {
+  getConversation,
   persistConversationExchange,
   summarizeConversation,
 } from "@/lib/conversations";
@@ -62,6 +63,32 @@ function sseEvent(data: Record<string, unknown>): string {
   return `data: ${JSON.stringify(data)}\n\n`;
 }
 
+function stripFollowupsBlock(text: string) {
+  return text.replace(/<followups>[\s\S]*?<\/followups>/g, "").trim();
+}
+
+function buildChatMessages({
+  history,
+  context,
+  question,
+}: {
+  history: Array<{ role: "user" | "assistant"; content: string }>;
+  context: string;
+  question: string;
+}) {
+  return [
+    {
+      role: "system" as const,
+      content: SYSTEM_PROMPT,
+    },
+    ...history,
+    {
+      role: "user" as const,
+      content: `Retrieved context for the current question:\n${context}\n\nCurrent question:\n${question}`,
+    },
+  ];
+}
+
 export async function POST(request: Request) {
   try {
     const session = await getSession();
@@ -118,6 +145,29 @@ export async function POST(request: Request) {
       }
     }
 
+    const conversationScopeId =
+      searchMode === "all" ? ALL_DOCUMENTS_SCOPE_ID : documentId;
+    const existingConversation = conversationId
+      ? await getConversation(session.userId, conversationId)
+      : null;
+
+    if (conversationId && !existingConversation) {
+      return NextResponse.json(
+        { error: "The selected conversation could not be found." },
+        { status: 404 },
+      );
+    }
+
+    if (
+      existingConversation &&
+      existingConversation.documentId !== conversationScopeId
+    ) {
+      return NextResponse.json(
+        { error: "The selected conversation does not match this search scope." },
+        { status: 400 },
+      );
+    }
+
     const retrievedChunks = await retrieveRelevantChunks({
       userId: session.userId,
       documentId: searchMode === "document" ? documentId : undefined,
@@ -154,6 +204,17 @@ export async function POST(request: Request) {
 
     const context = buildContext(retrievedChunks);
     const sources = toChatSources(retrievedChunks);
+    const history = (existingConversation?.messages ?? [])
+      .slice(-6)
+      .map((message) => ({
+        role: message.role,
+        content: stripFollowupsBlock(message.text),
+      }));
+    const chatMessages = buildChatMessages({
+      history,
+      context,
+      question,
+    });
 
     // Try streaming response
     try {
@@ -175,16 +236,7 @@ export async function POST(request: Request) {
               model: CHAT_MODEL,
               temperature: 0.2,
               stream: true,
-              messages: [
-                {
-                  role: "system",
-                  content: SYSTEM_PROMPT,
-                },
-                {
-                  role: "user",
-                  content: `Context:\n${context}\n\nQuestion:\n${question}`,
-                },
-              ],
+              messages: chatMessages,
             });
 
             for await (const chunk of completion) {
@@ -258,16 +310,7 @@ export async function POST(request: Request) {
         const completion = await groq.chat.completions.create({
           model: CHAT_MODEL,
           temperature: 0.2,
-          messages: [
-            {
-              role: "system",
-              content: SYSTEM_PROMPT,
-            },
-            {
-              role: "user",
-              content: `Context:\n${context}\n\nQuestion:\n${question}`,
-            },
-          ],
+          messages: chatMessages,
         });
         answer =
           completion.choices[0]?.message?.content?.trim() || unavailableMessage;

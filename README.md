@@ -18,7 +18,7 @@ Lexora AI is a Next.js 16 document intelligence workspace built around a retriev
 ## Architecture
 
 1. Upload a PDF through `/api/upload`
-2. Save the file to `public/uploads/`
+2. Save the file to the user's private workspace under `.lexora/users/<userId>/uploads/`
 3. Parse PDF text
 4. Split the text into 1000-character chunks with 200-character overlap
 5. Generate embeddings for each chunk
@@ -56,6 +56,7 @@ Open `http://localhost:3000`.
 - `/auth` handles sign in, sign up, forgot password, and reset
 - `/api/upload` handles secure PDF upload and indexing
 - `/api/files` returns indexed documents
+- `/api/files/serve` streams protected PDFs from private storage
 - `/api/index` rebuilds the vector index
 - `/api/chat` performs retrieval-augmented question answering
 - `/api/auth/*` handles password auth, session, and reset flows
@@ -64,6 +65,7 @@ Open `http://localhost:3000`.
 
 - Uploaded PDFs are validated for type and size.
 - Indexed vectors and saved threads are stored per user under `.lexora/users/<userId>/`.
+- Uploaded PDFs are stored outside the public web root and served through an authenticated route.
 - If your Groq account does not expose embeddings, Lexora AI automatically falls back to `local-hash-v1` for indexing and retrieval.
 - The chat prompt is grounded strictly to retrieved document context.
 - Localhost password reset returns a preview recovery link because no mail provider is configured in this project.

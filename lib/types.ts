@@ -8,6 +8,10 @@ export type IndexedDocument = {
   chunkCount: number;
   indexedAt: string;
   embeddingModel: string;
+  extractionMode?: "text" | "ocr-recommended";
+  notes?: string;
+  bookmarkedPages?: number[];
+  lastOpenedAt?: string;
 };
 
 export type ParsedPdfPage = {
@@ -56,6 +60,8 @@ export type ChatSource = {
   source: string;
   score: number;
   excerpt: string;
+  documentRank?: number;
+  documentHitCount?: number;
 };
 
 export type ConversationMessage = {
@@ -72,6 +78,7 @@ export type ConversationRecord = {
   title: string;
   createdAt: string;
   updatedAt: string;
+  pinned?: boolean;
   messages: ConversationMessage[];
 };
 
@@ -83,6 +90,7 @@ export type ConversationSummary = {
   updatedAt: string;
   messageCount: number;
   lastMessagePreview: string;
+  pinned: boolean;
 };
 
 export type AuthSession = {

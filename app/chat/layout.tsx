@@ -10,7 +10,7 @@ export default async function ChatLayout({ children }: ProtectedLayoutProps) {
   const session = await getSession();
 
   if (!session) {
-    redirect("/auth?next=/chat");
+    redirect("/auth?redirect=/chat");
   }
 
   return children;

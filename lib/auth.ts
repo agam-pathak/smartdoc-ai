@@ -43,8 +43,23 @@ const USERS_PATH = path.join(LEXORA_ROOT, "users.json");
 export const SESSION_COOKIE_NAME = "lexora_session";
 const SESSION_DURATION_MS = 1000 * 60 * 60 * 24 * 7;
 const RESET_TOKEN_DURATION_MS = 1000 * 60 * 30;
-const AUTH_SECRET =
-  process.env.LEXORA_AUTH_SECRET ?? "lexora-dev-secret-change-me";
+const DEVELOPMENT_AUTH_SECRET = "lexora-dev-secret-change-me";
+
+function getAuthSecret() {
+  const configuredSecret = process.env.LEXORA_AUTH_SECRET?.trim();
+
+  if (configuredSecret) {
+    return configuredSecret;
+  }
+
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "LEXORA_AUTH_SECRET must be configured in production.",
+    );
+  }
+
+  return DEVELOPMENT_AUTH_SECRET;
+}
 
 function normalizeEmail(value: string) {
   return value.trim().toLowerCase();
@@ -73,12 +88,12 @@ function hashPassword(password: string, salt: string) {
 }
 
 function hashResetToken(token: string) {
-  return createHmac("sha256", AUTH_SECRET).update(token).digest("hex");
+  return createHmac("sha256", getAuthSecret()).update(token).digest("hex");
 }
 
 function signPayload(payload: string) {
   return toBase64Url(
-    createHmac("sha256", AUTH_SECRET).update(payload).digest(),
+    createHmac("sha256", getAuthSecret()).update(payload).digest(),
   );
 }
 

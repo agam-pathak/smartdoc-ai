@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import {
   ArrowRight,
+  FileText,
   MessageSquareText,
 } from "lucide-react";
 import Link from "next/link";
@@ -33,6 +34,7 @@ function ChatWorkspace() {
   const [errorMessage, setErrorMessage] = useState("");
   const [viewerPageNumber, setViewerPageNumber] = useState(1);
   const [focusedSource, setFocusedSource] = useState<ChatSource | null>(null);
+  const [mobilePane, setMobilePane] = useState<"viewer" | "chat">("chat");
   const selectedDocumentIdRef = useRef(selectedDocumentId);
 
   useEffect(() => {
@@ -78,6 +80,7 @@ function ChatWorkspace() {
           setSelectedDocumentId(nextSelectedDocumentId);
           setViewerPageNumber(1);
           setFocusedSource(null);
+          setMobilePane(nextDocuments.length > 0 ? "chat" : "viewer");
         });
       } catch (error) {
         if (cancelled) {
@@ -132,9 +135,43 @@ function ChatWorkspace() {
   }
 
   return (
-    <div className="grid h-full grid-cols-1 gap-0 xl:grid-cols-2">
+    <div className="flex h-full flex-col">
+      <div className="border-b border-white/[0.06] px-4 py-2 xl:hidden">
+        <div className="inline-flex items-center gap-1 rounded-xl border border-white/[0.08] bg-white/[0.03] p-1">
+          <button
+            type="button"
+            onClick={() => setMobilePane("viewer")}
+            className={`rounded-lg px-3 py-1.5 text-xs transition ${
+              mobilePane === "viewer"
+                ? "bg-white/[0.08] text-white"
+                : "text-slate-400"
+            }`}
+          >
+            <FileText className="mr-1 inline h-3.5 w-3.5" />
+            Viewer
+          </button>
+          <button
+            type="button"
+            onClick={() => setMobilePane("chat")}
+            className={`rounded-lg px-3 py-1.5 text-xs transition ${
+              mobilePane === "chat"
+                ? "bg-white/[0.08] text-white"
+                : "text-slate-400"
+            }`}
+          >
+            <MessageSquareText className="mr-1 inline h-3.5 w-3.5" />
+            Chat
+          </button>
+        </div>
+      </div>
+
+      <div className="grid h-full min-h-0 grid-cols-1 gap-0 xl:grid-cols-2">
       {/* ── Left: PDF Viewer ── */}
-      <section className="flex flex-col overflow-hidden border-r border-white/[0.06]">
+      <section
+        className={`${
+          mobilePane === "viewer" ? "flex" : "hidden"
+        } min-h-0 flex-col overflow-hidden border-r border-white/[0.06] xl:flex`}
+      >
         {errorMessage ? (
           <p className="border-b border-rose-400/20 bg-rose-400/5 px-4 py-2 text-xs text-rose-300">
             {errorMessage}
@@ -143,16 +180,26 @@ function ChatWorkspace() {
 
         <PDFViewer
           key={selectedDocument?.fileUrl ?? "no-document"}
-          fileUrl={selectedDocument?.fileUrl ?? null}
-          title={selectedDocument?.name ?? "Select a document"}
+          document={selectedDocument}
           pageNumber={viewerPageNumber}
           onPageChange={setViewerPageNumber}
           focusedSource={focusedSource}
+          onDocumentUpdate={(updatedDocument) =>
+            setDocuments((currentDocuments) =>
+              currentDocuments.map((document) =>
+                document.id === updatedDocument.id ? updatedDocument : document,
+              ),
+            )
+          }
         />
       </section>
 
       {/* ── Right: Chat ── */}
-      <section className="flex flex-col overflow-hidden">
+      <section
+        className={`${
+          mobilePane === "chat" ? "flex" : "hidden"
+        } min-h-0 flex-col overflow-hidden xl:flex`}
+      >
         <ChatBox
           documents={documents}
           selectedDocumentId={selectedDocumentId}
@@ -160,6 +207,7 @@ function ChatWorkspace() {
             setSelectedDocumentId(documentId);
             setViewerPageNumber(1);
             setFocusedSource(null);
+            setMobilePane("viewer");
           }}
           onSourceSelect={(source) => {
             if (source.documentId && source.documentId !== selectedDocumentId) {
@@ -168,9 +216,11 @@ function ChatWorkspace() {
 
             setViewerPageNumber(source.pageStart);
             setFocusedSource(source);
+            setMobilePane("viewer");
           }}
         />
       </section>
+    </div>
     </div>
   );
 }

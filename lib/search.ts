@@ -15,6 +15,11 @@ type RetrieveChunksOptions = {
   searchMode?: "document" | "all";
 };
 
+type RerankedChunk = RetrievedChunk & {
+  documentRank?: number;
+  documentHitCount?: number;
+};
+
 function formatPageRange(pageStart: number, pageEnd: number) {
   return pageStart === pageEnd
     ? `page ${pageStart}`
@@ -51,17 +56,88 @@ export async function retrieveRelevantChunks({
       const chunks = await searchAcrossIndexedDocuments(
         userId,
         query.embedding,
-        topK,
+        Math.max(topK * 3, 8),
         documentIds,
       );
       results.push(...chunks);
     }
 
-    return results.sort((left, right) => right.score - left.score).slice(0, topK);
+    return rerankLibraryChunks(results, topK);
   }
 
   const query = await embedQuery(question, embeddingModel);
   return searchIndexedDocument(userId, documentId, query.embedding, topK);
+}
+
+function rerankLibraryChunks(chunks: RetrievedChunk[], topK: number) {
+  const documentStats = new Map<
+    string,
+    {
+      count: number;
+      bestScore: number;
+      averageScore: number;
+    }
+  >();
+
+  for (const chunk of chunks) {
+    const entry = documentStats.get(chunk.documentId) ?? {
+      count: 0,
+      bestScore: Number.NEGATIVE_INFINITY,
+      averageScore: 0,
+    };
+
+    entry.count += 1;
+    entry.bestScore = Math.max(entry.bestScore, chunk.score);
+    entry.averageScore =
+      (entry.averageScore * (entry.count - 1) + chunk.score) / entry.count;
+    documentStats.set(chunk.documentId, entry);
+  }
+
+  const sortedDocumentIds = [...documentStats.entries()]
+    .sort(
+      (left, right) =>
+        right[1].bestScore - left[1].bestScore ||
+        right[1].count - left[1].count,
+    )
+    .map(([documentId]) => documentId);
+  const documentRankMap = new Map(
+    sortedDocumentIds.map((documentId, index) => [documentId, index + 1]),
+  );
+
+  const rerankedChunks: RerankedChunk[] = chunks
+    .map((chunk) => {
+      const stats = documentStats.get(chunk.documentId)!;
+      const documentBoost = Math.min(stats.count, 3) * 0.025;
+      const rankBoost = Math.max(0, 4 - (documentRankMap.get(chunk.documentId) ?? 4)) * 0.01;
+
+      return {
+        ...chunk,
+        score: chunk.score + documentBoost + rankBoost,
+        documentRank: documentRankMap.get(chunk.documentId),
+        documentHitCount: stats.count,
+      };
+    })
+    .sort((left, right) => right.score - left.score);
+
+  const selectedChunks: RerankedChunk[] = [];
+  const perDocumentCounts = new Map<string, number>();
+
+  for (const chunk of rerankedChunks) {
+    const currentCount = perDocumentCounts.get(chunk.documentId) ?? 0;
+
+    if (selectedChunks.length >= topK) {
+      break;
+    }
+
+    if (currentCount >= 2 && perDocumentCounts.size < topK) {
+      continue;
+    }
+
+    selectedChunks.push(chunk);
+    perDocumentCounts.set(chunk.documentId, currentCount + 1);
+  }
+
+  return selectedChunks;
 }
 
 export function buildContext(chunks: RetrievedChunk[]) {
@@ -77,7 +153,10 @@ export function buildContext(chunks: RetrievedChunk[]) {
 }
 
 export function toChatSources(chunks: RetrievedChunk[]): ChatSource[] {
-  return chunks.map((chunk) => ({
+  return chunks.map((chunk) => {
+    const rankedChunk = chunk as RerankedChunk;
+
+    return {
     documentId: chunk.documentId,
     chunkIndex: chunk.chunkIndex,
     fileUrl: chunk.fileUrl,
@@ -86,5 +165,8 @@ export function toChatSources(chunks: RetrievedChunk[]): ChatSource[] {
     source: chunk.source,
     score: Number(chunk.score.toFixed(4)),
     excerpt: chunk.text.slice(0, 240).trim(),
-  }));
+    documentRank: rankedChunk.documentRank,
+    documentHitCount: rankedChunk.documentHitCount,
+  };
+  });
 }

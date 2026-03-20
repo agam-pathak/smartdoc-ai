@@ -15,12 +15,15 @@ import { embedTexts } from "@/lib/embeddings";
 import { withFileLock } from "@/lib/file-lock";
 import { parsePdfFile } from "@/lib/pdfParser";
 import {
+  ensurePrivateUploadAvailable,
   ensureUserWorkspaceDirectories,
   LEGACY_INDEX_ROOT,
   LEGACY_MANIFEST_PATH,
-  PUBLIC_UPLOADS_ROOT,
+  LEGACY_PUBLIC_UPLOADS_ROOT,
+  resolveLegacyPublicUploadsRoot,
   resolveUserIndexesRoot,
   resolveUserManifestPath,
+  resolveUserUploadFilePath,
   resolveUserUploadUrl,
   resolveUserUploadsRoot,
   LEXORA_ROOT,
@@ -50,7 +53,7 @@ type IndexDocumentInput = {
   sizeBytes: number;
 };
 
-const LEGACY_UPLOADS_ROOT = PUBLIC_UPLOADS_ROOT;
+const LEGACY_UPLOADS_ROOT = LEGACY_PUBLIC_UPLOADS_ROOT;
 
 export const DEFAULT_CHUNK_SIZE = 1000;
 export const DEFAULT_CHUNK_OVERLAP = 200;
@@ -86,9 +89,30 @@ function resolveLegacyIndexFile(documentId: string) {
   return path.join(LEGACY_INDEX_ROOT, `${documentId}.json`);
 }
 
-function resolvePublicFilePath(fileUrl: string) {
+function resolveLegacyPublicFilePath(fileUrl: string) {
   const relativePath = fileUrl.replace(/^\/+/, "");
   return path.join(process.cwd(), "public", relativePath);
+}
+
+async function resolveIndexedUploadFilePath(
+  userId: string,
+  fileName: string,
+  fileUrl: string,
+) {
+  const privatePath = resolveUserUploadFilePath(userId, fileName);
+
+  if (fs.existsSync(privatePath)) {
+    return privatePath;
+  }
+
+  await ensurePrivateUploadAvailable(userId, fileName);
+
+  if (fs.existsSync(privatePath)) {
+    return privatePath;
+  }
+
+  const legacyPath = resolveLegacyPublicFilePath(fileUrl);
+  return fs.existsSync(legacyPath) ? legacyPath : privatePath;
 }
 
 function deriveDisplayName(fileName: string) {
@@ -213,8 +237,11 @@ export async function migrateLegacyDocumentsToUser(userId: string) {
     }
 
     const nextFileUrl = resolveUserUploadUrl(userId, legacyDocument.fileName);
-    const legacyFilePath = resolvePublicFilePath(legacyDocument.fileUrl);
-    const nextFilePath = path.join(resolveUserUploadsRoot(userId), legacyDocument.fileName);
+    const legacyFilePath = resolveLegacyPublicFilePath(legacyDocument.fileUrl);
+    const nextFilePath = resolveUserUploadFilePath(
+      userId,
+      legacyDocument.fileName,
+    );
 
     if (fs.existsSync(legacyFilePath) && legacyFilePath !== nextFilePath) {
       await copyFileToPath(legacyFilePath, nextFilePath);
@@ -264,10 +291,25 @@ export async function migrateLegacyDocumentsToUser(userId: string) {
 export async function getDocuments(userId: string) {
   const manifest = await readUserManifest(userId);
 
-  return [...manifest.documents].sort(
-    (left, right) =>
-      Date.parse(right.indexedAt || "") - Date.parse(left.indexedAt || ""),
+  const documents: IndexedDocument[] = [...manifest.documents]
+    .map((document) => ({
+      ...document,
+      extractionMode: document.extractionMode ?? "text",
+      notes: document.notes ?? "",
+      bookmarkedPages: document.bookmarkedPages ?? [],
+    }))
+    .sort(
+      (left, right) =>
+        Date.parse(right.indexedAt || "") - Date.parse(left.indexedAt || ""),
+    );
+
+  await Promise.all(
+    documents.map((document) =>
+      ensurePrivateUploadAvailable(userId, document.fileName),
+    ),
   );
+
+  return documents;
 }
 
 export async function getDocument(userId: string, documentId: string) {
@@ -275,11 +317,61 @@ export async function getDocument(userId: string, documentId: string) {
   return documents.find((document) => document.id === documentId) ?? null;
 }
 
+type UpdateDocumentMetadataInput = {
+  notes?: string;
+  bookmarkedPages?: number[];
+  lastOpenedAt?: string;
+};
+
+export async function updateDocumentMetadata(
+  userId: string,
+  documentId: string,
+  updates: UpdateDocumentMetadataInput,
+) {
+  const documents = await getDocuments(userId);
+  const documentIndex = documents.findIndex((document) => document.id === documentId);
+
+  if (documentIndex < 0) {
+    return null;
+  }
+
+  const existingDocument = documents[documentIndex];
+  const nextDocument: IndexedDocument = {
+    ...existingDocument,
+    extractionMode: existingDocument.extractionMode ?? "text",
+    notes:
+      typeof updates.notes === "string"
+        ? updates.notes.trim().slice(0, 5000)
+        : existingDocument.notes,
+    bookmarkedPages: Array.isArray(updates.bookmarkedPages)
+      ? [...new Set(
+          updates.bookmarkedPages
+            .map((page) => Math.max(1, Math.floor(page)))
+            .filter(Boolean),
+        )].sort((left, right) => left - right)
+      : existingDocument.bookmarkedPages,
+    lastOpenedAt:
+      typeof updates.lastOpenedAt === "string"
+        ? updates.lastOpenedAt
+        : existingDocument.lastOpenedAt,
+  };
+
+  const nextDocuments = [...documents];
+  nextDocuments[documentIndex] = nextDocument;
+  await writeUserManifest(userId, nextDocuments);
+
+  return nextDocument;
+}
+
 export async function indexDocument(input: IndexDocumentInput) {
   await ensureUserWorkspaceDirectories(input.userId);
 
   const documentId = input.documentId ?? randomUUID();
-  const filePath = resolvePublicFilePath(input.fileUrl);
+  const filePath = await resolveIndexedUploadFilePath(
+    input.userId,
+    input.fileName,
+    input.fileUrl,
+  );
 
   if (!fs.existsSync(filePath)) {
     throw new Error("Uploaded PDF file could not be found for indexing.");
@@ -323,6 +415,9 @@ export async function indexDocument(input: IndexDocumentInput) {
     chunkCount: storedChunks.length,
     indexedAt: new Date().toISOString(),
     embeddingModel: embeddingResult.model,
+    extractionMode: parsedPdf.extractionMode,
+    notes: "",
+    bookmarkedPages: [],
   };
 
   const documentIndex: DocumentIndexFile = {
@@ -425,7 +520,8 @@ export async function deleteDocument(userId: string, documentId: string) {
   }
 
   await removeFileIfExists(resolveIndexFile(userId, documentId));
-  await removeFileIfExists(resolvePublicFilePath(document.fileUrl));
+  await removeFileIfExists(resolveUserUploadFilePath(userId, document.fileName));
+  await removeFileIfExists(resolveLegacyPublicFilePath(document.fileUrl));
 
   const documents = await getDocuments(userId);
   await writeUserManifest(
@@ -448,49 +544,60 @@ export async function reindexAllDocuments(userId: string) {
 }
 
 export async function indexUntrackedUploads(userId: string) {
-  let entries: Dirent<string>[] = [];
-  const uploadsRoot = resolveUserUploadsRoot(userId);
-
-  try {
-    entries = await readdir(uploadsRoot, { withFileTypes: true });
-  } catch (error) {
-    if (
-      error &&
-      typeof error === "object" &&
-      "code" in error &&
-      error.code === "ENOENT"
-    ) {
-      return [];
-    }
-
-    throw error;
-  }
-
   const indexedDocuments = await getDocuments(userId);
   const trackedFiles = new Set(indexedDocuments.map((document) => document.fileName));
   const newlyIndexedDocuments: IndexedDocument[] = [];
+  const seenFileNames = new Set<string>();
+  const uploadRoots = [
+    resolveUserUploadsRoot(userId),
+    resolveLegacyPublicUploadsRoot(userId),
+  ];
 
-  for (const entry of entries) {
-    if (!entry.isFile() || !entry.name.toLowerCase().endsWith(".pdf")) {
-      continue;
+  for (const uploadRoot of uploadRoots) {
+    let entries: Dirent<string>[] = [];
+
+    try {
+      entries = await readdir(uploadRoot, { withFileTypes: true });
+    } catch (error) {
+      if (
+        error &&
+        typeof error === "object" &&
+        "code" in error &&
+        error.code === "ENOENT"
+      ) {
+        continue;
+      }
+
+      throw error;
     }
 
-    if (trackedFiles.has(entry.name)) {
-      continue;
+    for (const entry of entries) {
+      if (!entry.isFile() || !entry.name.toLowerCase().endsWith(".pdf")) {
+        continue;
+      }
+
+      if (trackedFiles.has(entry.name) || seenFileNames.has(entry.name)) {
+        continue;
+      }
+
+      if (uploadRoot !== resolveUserUploadsRoot(userId)) {
+        await ensurePrivateUploadAvailable(userId, entry.name);
+      }
+
+      const fullPath = resolveUserUploadFilePath(userId, entry.name);
+      const fileStats = await stat(fullPath);
+
+      newlyIndexedDocuments.push(
+        await indexDocument({
+          userId,
+          name: deriveDisplayName(entry.name) || "Uploaded document",
+          fileName: entry.name,
+          fileUrl: resolveUserUploadUrl(userId, entry.name),
+          sizeBytes: fileStats.size,
+        }),
+      );
+      seenFileNames.add(entry.name);
     }
-
-    const fullPath = path.join(uploadsRoot, entry.name);
-    const fileStats = await stat(fullPath);
-
-    newlyIndexedDocuments.push(
-      await indexDocument({
-        userId,
-        name: deriveDisplayName(entry.name) || "Uploaded document",
-        fileName: entry.name,
-        fileUrl: resolveUserUploadUrl(userId, entry.name),
-        sizeBytes: fileStats.size,
-      }),
-    );
   }
 
   return newlyIndexedDocuments;

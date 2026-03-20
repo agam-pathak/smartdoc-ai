@@ -60,7 +60,9 @@ function createAssistantIntro(
     id: "assistant-intro",
     role: "assistant",
     text: document
-      ? `Ready. Ask about "${document.name}" and I will answer from retrieved evidence only.`
+      ? document.extractionMode === "ocr-recommended"
+        ? `"${document.name}" looks scan-heavy. I can keep it in the workspace, but detailed grounded answers may be limited until OCR is added.`
+        : `Ready. Ask about "${document.name}" and I will answer from retrieved evidence only.`
       : "Select a document to start a grounded conversation.",
     createdAt: new Date(0).toISOString(),
   };
@@ -88,12 +90,36 @@ function createPromptChips(
     return [];
   }
 
+  if (document.extractionMode === "ocr-recommended") {
+    return [
+      `What parts of "${document.name}" appear to be OCR-limited?`,
+      "What metadata or visible structure can you still infer from this file?",
+      "How should I improve this document before asking detailed questions?",
+    ];
+  }
+
   return [
     `Give me a crisp summary of "${document.name}".`,
     "List the most important facts and entities.",
     "What are the strongest highlights in this document?",
     "Which details matter most for decision-making?",
   ];
+}
+
+function toMarkdownTranscript(
+  conversationTitle: string,
+  messages: ConversationMessage[],
+) {
+  return [
+    `# ${conversationTitle}`,
+    "",
+    ...messages.flatMap((message) => [
+      `## ${message.role === "user" ? "User" : "Assistant"}`,
+      "",
+      message.text,
+      "",
+    ]),
+  ].join("\n");
 }
 
 export default function ChatBox({
@@ -115,6 +141,8 @@ export default function ChatBox({
     useState(false);
   const [conversationError, setConversationError] = useState("");
   const [deletingConversationId, setDeletingConversationId] = useState("");
+  const [threadSummary, setThreadSummary] = useState("");
+  const [summarizingConversation, setSummarizingConversation] = useState(false);
   const endOfMessagesRef = useRef<HTMLDivElement | null>(null);
   const selectedConversationIdRef = useRef(selectedConversationId);
 
@@ -155,6 +183,7 @@ export default function ChatBox({
   useEffect(() => {
     setQuestion("");
     setConversationError("");
+    setThreadSummary("");
   }, [searchMode]);
 
   useEffect(() => {
@@ -202,6 +231,7 @@ export default function ChatBox({
         setConversationSummaries(nextSummaries);
         setSelectedConversationId(nextConversationId);
         setQuestion("");
+        setThreadSummary("");
 
         if (!nextConversationId) {
           setMessages([]);
@@ -264,6 +294,7 @@ export default function ChatBox({
     setLoadingConversationDetail(true);
     setConversationError("");
     setSelectedConversationId(conversationId);
+    setThreadSummary("");
 
     try {
       const response = await fetch(
@@ -345,11 +376,9 @@ export default function ChatBox({
 
   async function renameConversationById(
     conversationId: string,
-    currentTitle: string,
+    nextTitle: string,
   ) {
-    const nextTitle = window.prompt("Rename thread", currentTitle)?.trim();
-
-    if (!nextTitle || nextTitle === currentTitle) {
+    if (!nextTitle.trim()) {
       return;
     }
 
@@ -364,7 +393,7 @@ export default function ChatBox({
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            title: nextTitle,
+            title: nextTitle.trim(),
           }),
         },
       );
@@ -392,6 +421,132 @@ export default function ChatBox({
           : "Unable to rename the conversation.",
       );
     }
+  }
+
+  async function updateConversationPinnedById(
+    conversationId: string,
+    pinned: boolean,
+  ) {
+    setConversationError("");
+
+    try {
+      const response = await fetch(`/api/conversations/${conversationId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ pinned }),
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Unable to update the thread.");
+      }
+
+      const updatedConversation: ConversationSummary = data.conversation;
+      setConversationSummaries((currentSummaries) =>
+        [
+          ...currentSummaries.map((conversation) =>
+            conversation.id === updatedConversation.id
+              ? updatedConversation
+              : conversation,
+          ),
+        ].sort(
+          (left, right) =>
+            Number(Boolean(right.pinned)) - Number(Boolean(left.pinned)) ||
+            Date.parse(right.updatedAt || "") - Date.parse(left.updatedAt || ""),
+        ),
+      );
+    } catch (error) {
+      setConversationError(
+        error instanceof Error
+          ? error.message
+          : "Unable to update the thread.",
+      );
+    }
+  }
+
+  async function duplicateConversationById(conversationId: string) {
+    setConversationError("");
+
+    try {
+      const response = await fetch(`/api/conversations/${conversationId}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ action: "duplicate" }),
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Unable to duplicate the conversation.");
+      }
+
+      const duplicatedConversation: ConversationSummary = data.conversation;
+      setConversationSummaries((currentSummaries) => [
+        duplicatedConversation,
+        ...currentSummaries.filter(
+          (conversation) => conversation.id !== duplicatedConversation.id,
+        ),
+      ]);
+      await loadConversationDetail(duplicatedConversation.id);
+    } catch (error) {
+      setConversationError(
+        error instanceof Error
+          ? error.message
+          : "Unable to duplicate the conversation.",
+      );
+    }
+  }
+
+  async function summarizeActiveConversation() {
+    if (!selectedConversationId) {
+      return;
+    }
+
+    setSummarizingConversation(true);
+    setConversationError("");
+
+    try {
+      const response = await fetch(`/api/conversations/${selectedConversationId}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ action: "summarize" }),
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Unable to summarize the conversation.");
+      }
+
+      setThreadSummary(typeof data.summary === "string" ? data.summary : "");
+    } catch (error) {
+      setConversationError(
+        error instanceof Error
+          ? error.message
+          : "Unable to summarize the conversation.",
+      );
+    } finally {
+      setSummarizingConversation(false);
+    }
+  }
+
+  function exportActiveConversation() {
+    if (!activeConversation || messages.length === 0) {
+      return;
+    }
+
+    const contents = toMarkdownTranscript(activeConversation.title, messages);
+    const blob = new Blob([contents], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${activeConversation.title.replace(/[^\w-]+/g, "-").toLowerCase() || "thread"}.md`;
+    anchor.click();
+    URL.revokeObjectURL(url);
   }
 
   async function deleteConversationById(conversationId: string) {
@@ -659,9 +814,13 @@ export default function ChatBox({
         canAskQuestion={canAskQuestion}
         promptChips={promptChips}
         messages={messages}
+        summaryText={threadSummary}
+        summarizingConversation={summarizingConversation}
         onDocumentChange={onDocumentChange}
         onSearchModeChange={setSearchMode}
         onPromptChipClick={(prompt) => setQuestion(prompt)}
+        onSummarizeConversation={() => void summarizeActiveConversation()}
+        onExportConversation={exportActiveConversation}
       />
 
       <ThreadHistory
@@ -673,6 +832,8 @@ export default function ChatBox({
         onLoadConversation={(id) => void loadConversationDetail(id)}
         onCreateNew={() => void createNewConversation()}
         onRename={(id, title) => void renameConversationById(id, title)}
+        onPin={(id, pinned) => void updateConversationPinnedById(id, pinned)}
+        onDuplicate={(id) => void duplicateConversationById(id)}
         onDelete={(id) => void deleteConversationById(id)}
       />
 

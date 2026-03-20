@@ -62,12 +62,14 @@ function summarizeConversation(
     updatedAt: conversation.updatedAt,
     messageCount: conversation.messages.length,
     lastMessagePreview: lastMessage?.text.slice(0, 120).trim() || "No messages yet",
+    pinned: conversation.pinned ?? false,
   };
 }
 
 function sortConversations(conversations: ConversationRecord[]) {
   return [...conversations].sort(
     (left, right) =>
+      Number(Boolean(right.pinned)) - Number(Boolean(left.pinned)) ||
       Date.parse(right.updatedAt || "") - Date.parse(left.updatedAt || ""),
   );
 }
@@ -188,6 +190,7 @@ export async function createConversation({
     title: normalizeConversationTitle(title),
     createdAt: now,
     updatedAt: now,
+    pinned: false,
     messages: [],
   };
 
@@ -223,6 +226,7 @@ export async function persistConversationExchange({
           title: deriveConversationTitle(question),
           createdAt: now,
           updatedAt: now,
+          pinned: false,
           messages: [],
         };
 
@@ -268,6 +272,19 @@ export async function renameConversation(
   conversationId: string,
   title: string,
 ) {
+  return updateConversationMetadata(userId, conversationId, { title });
+}
+
+type UpdateConversationMetadataInput = {
+  title?: string;
+  pinned?: boolean;
+};
+
+export async function updateConversationMetadata(
+  userId: string,
+  conversationId: string,
+  updates: UpdateConversationMetadataInput,
+) {
   const store = await readUserStore(userId);
   const nextConversations = [...store.conversations];
   const conversationIndex = nextConversations.findIndex(
@@ -281,7 +298,14 @@ export async function renameConversation(
   const existingConversation = nextConversations[conversationIndex];
   const updatedConversation: ConversationRecord = {
     ...existingConversation,
-    title: normalizeConversationTitle(title),
+    title:
+      typeof updates.title === "string"
+        ? normalizeConversationTitle(updates.title)
+        : existingConversation.title,
+    pinned:
+      typeof updates.pinned === "boolean"
+        ? updates.pinned
+        : existingConversation.pinned ?? false,
     updatedAt: new Date().toISOString(),
   };
 
@@ -289,6 +313,34 @@ export async function renameConversation(
   await writeUserStore(userId, nextConversations);
 
   return updatedConversation;
+}
+
+export async function duplicateConversation(userId: string, conversationId: string) {
+  const store = await readUserStore(userId);
+  const conversation = store.conversations.find(
+    (item) => item.id === conversationId,
+  );
+
+  if (!conversation) {
+    return null;
+  }
+
+  const now = new Date().toISOString();
+  const duplicatedConversation: ConversationRecord = {
+    ...conversation,
+    id: randomUUID(),
+    title: normalizeConversationTitle(`${conversation.title} copy`),
+    createdAt: now,
+    updatedAt: now,
+    pinned: false,
+    messages: conversation.messages.map((message) => ({
+      ...message,
+      id: randomUUID(),
+    })),
+  };
+
+  await writeUserStore(userId, [duplicatedConversation, ...store.conversations]);
+  return duplicatedConversation;
 }
 
 export async function deleteConversation(userId: string, conversationId: string) {

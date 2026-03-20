@@ -2,7 +2,7 @@
 
 import { ArrowUp, Sparkles } from "lucide-react";
 
-import type { ConversationSummary, IndexedDocument } from "@/lib/types";
+import type { IndexedDocument } from "@/lib/types";
 
 type SearchMode = "document" | "all";
 
@@ -45,7 +45,7 @@ export default function ChatComposer({
           onKeyDown={onKeyDown}
           placeholder={
             searchMode === "all"
-              ? "Ask Lexora AI about this document..."
+              ? "Ask Lexora AI across your indexed documents..."
               : selectedDocument
                 ? `Ask Lexora AI about this document...`
                 : "Upload or select a document to enable chat."

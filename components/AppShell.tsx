@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
@@ -64,7 +65,13 @@ export default function AppShell({ children, session }: AppShellProps) {
           <div className="flex items-center gap-8">
             <Link href="/" className="flex items-center gap-3 active:scale-95 transition-transform group">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-400/20 to-blue-500/20 shadow-inner ring-1 ring-white/10 group-hover:ring-cyan-400/30 transition-all">
-                <img src="/logo-mark.png" alt="Lexora AI" className="h-6 w-6 object-contain" />
+                <Image
+                  src="/logo-mark.png"
+                  width={24}
+                  height={24}
+                  alt="Lexora AI"
+                  className="h-6 w-6 object-contain"
+                />
               </div>
               <div className="hidden sm:block">
                  <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-cyan-400/80">Lexora AI</p>

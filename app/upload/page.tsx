@@ -3,6 +3,7 @@
 import {
   ArrowRight,
   Database,
+  FileSearch,
   FileStack,
   LoaderCircle,
   Search,
@@ -43,10 +44,13 @@ export default function UploadPage() {
   const [statusMessage, setStatusMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadStage, setUploadStage] = useState("idle");
   const [dragActive, setDragActive] = useState(false);
   const [searchValue, setSearchValue] = useState("");
   const [sortMode, setSortMode] = useState("recent");
   const [deletingDocumentId, setDeletingDocumentId] = useState("");
+  const [lastIndexedDocument, setLastIndexedDocument] = useState<IndexedDocument | null>(null);
 
   async function loadDocuments() {
     setErrorMessage("");
@@ -80,17 +84,77 @@ export default function UploadPage() {
     setUploading(true);
     setErrorMessage("");
     setStatusMessage("");
+    setUploadProgress(0);
+    setUploadStage("uploading");
+    setLastIndexedDocument(null);
     try {
       const formData = new FormData();
       formData.append("file", selectedFile);
-      const response = await fetch("/api/upload", { method: "POST", body: formData });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Upload failed.");
+
+      const data = await new Promise<{ message?: string; document: IndexedDocument }>((resolve, reject) => {
+        const request = new XMLHttpRequest();
+        let indexingInterval: number | null = null;
+
+        request.open("POST", "/api/upload");
+
+        request.upload.onprogress = (event) => {
+          if (!event.lengthComputable) {
+            return;
+          }
+
+          const nextProgress = Math.min(
+            78,
+            Math.round((event.loaded / event.total) * 78),
+          );
+          setUploadProgress(nextProgress);
+        };
+
+        request.upload.onload = () => {
+          setUploadStage("indexing");
+          setUploadProgress(82);
+          indexingInterval = window.setInterval(() => {
+            setUploadProgress((current) => (current >= 96 ? current : current + 2));
+          }, 260);
+        };
+
+        request.onerror = () => {
+          if (indexingInterval) {
+            window.clearInterval(indexingInterval);
+          }
+          reject(new Error("Upload failed unexpectedly."));
+        };
+
+        request.onload = () => {
+          if (indexingInterval) {
+            window.clearInterval(indexingInterval);
+          }
+
+          try {
+            const payload = JSON.parse(request.responseText || "{}");
+
+            if (request.status < 200 || request.status >= 300) {
+              reject(new Error(payload.error || "Upload failed."));
+              return;
+            }
+
+            resolve(payload);
+          } catch {
+            reject(new Error("Upload failed unexpectedly."));
+          }
+        };
+
+        request.send(formData);
+      });
+
+      setUploadStage("ready");
+      setUploadProgress(100);
       setStatusMessage(data.message || "Document uploaded successfully.");
+      setLastIndexedDocument(data.document);
+      setSelectedFile(null);
       await loadDocuments();
-      router.push(`/chat?doc=${data.document.id}`);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Upload failed unexpectedly.");
+      setUploadStage("error");
     } finally {
       setUploading(false);
     }
@@ -234,6 +298,26 @@ export default function UploadPage() {
                   <p className="mt-2 text-[10px] uppercase font-bold tracking-widest text-slate-600">{formatBytes(selectedFile.size)} • PDF MIME</p>
                 </div>
               )}
+
+              {uploading && (
+                <div className="mt-8 w-full rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-left">
+                  <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">
+                    <span>{uploadStage === "indexing" ? "Indexing" : "Uploading"}</span>
+                    <span>{uploadProgress}%</span>
+                  </div>
+                  <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/[0.06]">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-cyan-400 to-blue-500 transition-all duration-300"
+                      style={{ width: `${uploadProgress}%` }}
+                    />
+                  </div>
+                  <p className="mt-3 text-xs text-slate-400">
+                    {uploadStage === "indexing"
+                      ? "Parsing pages, chunking text, and preparing retrieval vectors."
+                      : "Streaming the PDF into the private workspace."}
+                  </p>
+                </div>
+              )}
            </div>
 
            <button 
@@ -255,6 +339,37 @@ export default function UploadPage() {
                  <li className="flex items-center gap-2"><span className="h-1 w-1 rounded-full bg-cyan-400" /> Reasoning Hook: Online</li>
               </ul>
            </div>
+
+           {lastIndexedDocument ? (
+             <div className="rounded-[2rem] border border-cyan-400/10 bg-cyan-400/5 p-8 space-y-4">
+               <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-200">
+                 <FileSearch className="h-3.5 w-3.5" /> Latest Index
+               </div>
+               <div>
+                 <h3 className="text-lg font-bold text-white">{lastIndexedDocument.name}</h3>
+                 <p className="mt-2 text-sm text-slate-400">
+                   {lastIndexedDocument.pageCount} pages • {lastIndexedDocument.chunkCount} chunks • {lastIndexedDocument.embeddingModel}
+                 </p>
+               </div>
+               {lastIndexedDocument.extractionMode === "ocr-recommended" ? (
+                 <p className="rounded-xl border border-amber-400/20 bg-amber-400/10 px-4 py-3 text-xs text-amber-200">
+                   This file looks scan-heavy. It was kept in the workspace, but grounded answers may be limited until OCR is available.
+                 </p>
+               ) : (
+                 <p className="rounded-xl border border-emerald-400/20 bg-emerald-400/10 px-4 py-3 text-xs text-emerald-200">
+                   Extraction completed cleanly and the file is ready for grounded chat.
+                 </p>
+               )}
+               <button
+                 type="button"
+                 onClick={() => router.push(`/chat?doc=${lastIndexedDocument.id}`)}
+                 className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 px-5 py-3 text-xs font-bold uppercase tracking-widest text-white transition hover:brightness-110"
+               >
+                 Open In Workspace
+                 <ArrowRight className="h-3.5 w-3.5" />
+               </button>
+             </div>
+           ) : null}
         </aside>
       </div>
 

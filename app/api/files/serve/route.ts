@@ -5,7 +5,11 @@ import path from "node:path";
 import { NextResponse } from "next/server";
 
 import { getSession } from "@/lib/auth";
-import { resolveUserUploadsRoot } from "@/lib/storage";
+import {
+  ensurePrivateUploadAvailable,
+  isUserUploadUrl,
+  resolveUserUploadsRoot,
+} from "@/lib/storage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,10 +35,19 @@ export async function GET(request: Request) {
       );
     }
 
-    // Ensure the requested file belongs to the current user's workspace
-    const uploadsRoot = resolveUserUploadsRoot(session.userId);
+    if (!isUserUploadUrl(session.userId, fileUrl)) {
+      return NextResponse.json(
+        { error: "Access denied." },
+        { status: 403 },
+      );
+    }
+
     const fileName = path.basename(fileUrl);
-    const filePath = path.join(uploadsRoot, fileName);
+    const uploadsRoot = resolveUserUploadsRoot(session.userId);
+    const filePath = await ensurePrivateUploadAvailable(
+      session.userId,
+      fileName,
+    );
     const resolvedPath = path.resolve(filePath);
 
     if (!resolvedPath.startsWith(path.resolve(uploadsRoot))) {

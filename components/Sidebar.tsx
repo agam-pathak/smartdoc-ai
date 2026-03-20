@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import type { LucideIcon } from "lucide-react";
 import {
   ArrowUpRight,
@@ -161,7 +162,13 @@ export default function Sidebar({ session }: SidebarProps) {
           <div className="flex items-center justify-between gap-4">
             <Link href="/" className="flex items-center gap-3">
               <div className="flex h-11 w-11 items-center justify-center">
-                <img src="/logo-mark.png" alt="Lexora AI" className="h-9 w-9 object-contain" />
+                <Image
+                  src="/logo-mark.png"
+                  width={36}
+                  height={36}
+                  alt="Lexora AI"
+                  className="h-9 w-9 object-contain"
+                />
               </div>
               <div>
                 <p className="mono text-[10px] uppercase tracking-[0.32em] text-cyan-100/65">
@@ -194,7 +201,13 @@ export default function Sidebar({ session }: SidebarProps) {
                 <div className="flex items-start justify-between gap-3">
                   <Link href="/" className="flex items-center gap-3">
                     <div className="flex h-12 w-12 items-center justify-center">
-                      <img src="/logo-mark.png" alt="Lexora AI" className="h-10 w-10 object-contain" />
+                      <Image
+                        src="/logo-mark.png"
+                        width={40}
+                        height={40}
+                        alt="Lexora AI"
+                        className="h-10 w-10 object-contain"
+                      />
                     </div>
                     <div>
                       <p className="mono text-[10px] uppercase tracking-[0.32em] text-cyan-100/65">

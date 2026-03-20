@@ -8,6 +8,7 @@ import {
   Zap,
   CheckCircle2,
 } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 import { getSession } from "@/lib/auth";
 
@@ -35,7 +36,7 @@ export default async function HomePage() {
             </h1>
             
             <p className="max-w-xl text-xl leading-relaxed text-slate-400 font-medium">
-              Beyond simple PDF viewing. Securely index, retrieve, and chat with your document library using grounded evidence and agentic reasoning.
+              Beyond simple PDF viewing. Securely index, retrieve, and chat with your document library using grounded evidence and private search.
             </p>
 
             <div className="flex flex-wrap gap-5 pt-4">
@@ -83,14 +84,14 @@ export default async function HomePage() {
         <div className="space-y-8">
            <div className="space-y-2">
               <h2 className="text-3xl font-bold text-white">Advanced Extraction Flow</h2>
-              <p className="text-slate-500 max-w-lg text-lg leading-relaxed">Lexora uses the Perplexify retrieval engine to chunk, embed, and cite your documents with extreme precision.</p>
+              <p className="text-slate-500 max-w-lg text-lg leading-relaxed">Lexora uses a private retrieval pipeline to chunk, embed, rank, and cite your documents with grounded context.</p>
            </div>
            
            <div className="grid gap-4">
               {[
-                { title: "Vector Index Generation", body: "Automatic latent indexing upon document ingestion.", icon: Zap },
-                { title: "Grounded Citations", body: "Every answer is linked to a highlighted source page.", icon: ShieldCheck },
-                { title: "Agentic Reasoning", body: "Multi-step thinking process for complex questions.", icon: Sparkles }
+                { title: "Vector Index Generation", body: "Automatic indexing runs when a PDF is added to the workspace.", icon: Zap },
+                { title: "Grounded Citations", body: "Answers link back to the relevant source pages in the viewer.", icon: ShieldCheck },
+                { title: "Conversation Memory", body: "Threads keep recent turns in context while staying grounded in retrieval.", icon: Sparkles }
               ].map((f, i) => (
                 <div key={i} className="flex gap-6 rounded-3xl border border-white/5 bg-slate-950/20 p-6 transition hover:border-cyan-400/20 hover:bg-slate-950/40 group">
                    <div className="mt-1 h-12 w-12 shrink-0 flex items-center justify-center rounded-2xl bg-white/5 text-slate-400 group-hover:bg-cyan-400/10 group-hover:text-cyan-400 transition-colors">
@@ -139,7 +140,13 @@ export default async function HomePage() {
             <div className="space-y-6">
                <div className="flex items-center gap-3">
                   <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/5">
-                     <img src="/logo.png" className="h-4 w-4 opacity-50" alt="" />
+                     <Image
+                       src="/logo.png"
+                       width={16}
+                       height={16}
+                       className="h-4 w-4 opacity-50"
+                       alt=""
+                     />
                   </div>
                   <span className="text-[10px] font-extrabold uppercase tracking-[0.4em] text-slate-500">Lexora AI</span>
                </div>

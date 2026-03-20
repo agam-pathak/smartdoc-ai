@@ -5,7 +5,11 @@ import path from "node:path";
 import { NextResponse } from "next/server";
 
 import { getSession } from "@/lib/auth";
-import { resolveUserUploadUrl, resolveUserUploadsRoot } from "@/lib/storage";
+import {
+  resolveUserUploadFilePath,
+  resolveUserUploadUrl,
+  resolveUserUploadsRoot,
+} from "@/lib/storage";
 import { indexDocument } from "@/lib/vectorStore";
 
 export const runtime = "nodejs";
@@ -75,7 +79,7 @@ export async function POST(request: Request) {
     const safeFileName = sanitizePdfFilename(uploadedFile.name);
     const uploadsDirectory = resolveUserUploadsRoot(session.userId);
     const fileUrl = resolveUserUploadUrl(session.userId, safeFileName);
-    const filePath = path.join(uploadsDirectory, safeFileName);
+    const filePath = resolveUserUploadFilePath(session.userId, safeFileName);
     const buffer = Buffer.from(await uploadedFile.arrayBuffer());
 
     await mkdir(uploadsDirectory, { recursive: true });

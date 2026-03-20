@@ -10,7 +10,7 @@ export default async function UploadLayout({ children }: ProtectedLayoutProps) {
   const session = await getSession();
 
   if (!session) {
-    redirect("/auth?next=/upload");
+    redirect("/auth?redirect=/upload");
   }
 
   return children;

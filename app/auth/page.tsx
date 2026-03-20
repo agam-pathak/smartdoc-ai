@@ -9,6 +9,7 @@ import {
   Sparkles,
   UserRound,
 } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
@@ -21,6 +22,14 @@ type FormState = {
   password: string;
   confirmPassword: string;
 };
+
+function normalizeRedirectPath(candidate: string | null) {
+  if (!candidate || !candidate.startsWith("/") || candidate.startsWith("//")) {
+    return "/chat";
+  }
+
+  return candidate;
+}
 
 const modeCopy: Record<AuthMode, { title: string; subtitle: string; submitLabel: string; }> = {
   signin: { title: "Welcome back", subtitle: "Enter your credentials to access your private document workspace.", submitLabel: "Sign In" },
@@ -38,9 +47,13 @@ function AuthPageContent() {
   const [submitting, setSubmitting] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  const [resetPreviewPath, setResetPreviewPath] = useState("");
+  const [resetPreviewExpiry, setResetPreviewExpiry] = useState("");
 
   const token = searchParams.get("token") || "";
-  const nextPath = searchParams.get("next") || "/chat";
+  const redirectPath = normalizeRedirectPath(
+    searchParams.get("redirect") || searchParams.get("next"),
+  );
 
   useEffect(() => {
     const requestedMode = searchParams.get("mode") as AuthMode;
@@ -48,6 +61,13 @@ function AuthPageContent() {
       setMode(requestedMode);
     }
   }, [searchParams]);
+
+  useEffect(() => {
+    if (mode !== "forgot") {
+      setResetPreviewPath("");
+      setResetPreviewExpiry("");
+    }
+  }, [mode]);
 
   function updateField(field: keyof FormState, value: string) {
     setForm(prev => ({ ...prev, [field]: value }));
@@ -59,6 +79,13 @@ function AuthPageContent() {
     setSubmitting(true);
     setErrorMessage("");
     try {
+      if (
+        (mode === "signup" || mode === "reset") &&
+        form.password !== form.confirmPassword
+      ) {
+        throw new Error("Passwords do not match.");
+      }
+
       const endpoint = mode === "signup" ? "/api/auth/signup" : mode === "signin" ? "/api/auth/signin" : mode === "forgot" ? "/api/auth/forgot" : "/api/auth/reset";
       const payload = mode === "reset" ? { token, password: form.password } : mode === "forgot" ? { email: form.email } : mode === "signup" ? { name: form.name, email: form.email, password: form.password } : { email: form.email, password: form.password };
       
@@ -68,11 +95,23 @@ function AuthPageContent() {
       
       if (mode === "forgot") {
         setStatusMessage(data.message);
+        setResetPreviewPath(
+          typeof data.resetPath === "string" ? data.resetPath : "",
+        );
+        setResetPreviewExpiry(
+          typeof data.expiresAt === "string" ? data.expiresAt : "",
+        );
       } else if (mode === "reset") {
         setMode("signin");
         setStatusMessage("Password reset successful. Please sign in.");
+        setForm({
+          name: "",
+          email: "",
+          password: "",
+          confirmPassword: "",
+        });
       } else {
-        router.push(nextPath);
+        router.push(redirectPath);
         router.refresh();
       }
     } catch (e: unknown) {
@@ -90,7 +129,13 @@ function AuthPageContent() {
         {/* ── Logo & Header ── */}
         <div className="text-center space-y-3">
           <Link href="/" className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-400/20 to-blue-500/20 shadow-inner">
-            <img src="/logo.png" className="h-8 w-8 object-contain" alt="Lexora AI" />
+            <Image
+              src="/logo.png"
+              width={32}
+              height={32}
+              className="h-8 w-8 object-contain"
+              alt="Lexora AI"
+            />
           </Link>
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-white">{currentCopy.title}</h1>
@@ -155,7 +200,26 @@ function AuthPageContent() {
               {submitting ? "Processing..." : currentCopy.submitLabel}
             </button>
 
-            {statusMessage && <div className="rounded-xl bg-emerald-500/10 border border-emerald-500/20 p-4 text-xs font-medium text-emerald-400 text-center">{statusMessage}</div>}
+            {statusMessage && (
+              <div className="rounded-xl bg-emerald-500/10 border border-emerald-500/20 p-4 text-xs font-medium text-emerald-400 text-center">
+                <p>{statusMessage}</p>
+                {resetPreviewPath ? (
+                  <div className="mt-3 space-y-2">
+                    <Link
+                      href={resetPreviewPath}
+                      className="inline-flex rounded-lg border border-emerald-400/20 bg-emerald-500/10 px-3 py-2 text-[11px] font-bold uppercase tracking-widest text-emerald-300 transition hover:bg-emerald-500/15"
+                    >
+                      Open recovery link
+                    </Link>
+                    {resetPreviewExpiry ? (
+                      <p className="text-[10px] uppercase tracking-widest text-emerald-300/80">
+                        Expires {new Date(resetPreviewExpiry).toLocaleString("en-IN")}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            )}
             {errorMessage && <div className="rounded-xl bg-rose-500/10 border border-rose-500/20 p-4 text-xs font-medium text-rose-400 text-center">{errorMessage}</div>}
           </div>
         </div>
