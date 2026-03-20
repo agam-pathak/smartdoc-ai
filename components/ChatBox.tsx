@@ -62,6 +62,8 @@ function createAssistantIntro(
     text: document
       ? document.extractionMode === "ocr-recommended"
         ? `"${document.name}" looks scan-heavy. I can keep it in the workspace, but detailed grounded answers may be limited until OCR is added.`
+        : document.extractionMode === "ocr"
+          ? `"${document.name}" was indexed with OCR. Grounded answers are available, but the extracted text may be a little noisier than a native digital PDF.`
         : `Ready. Ask about "${document.name}" and I will answer from retrieved evidence only.`
       : "Select a document to start a grounded conversation.",
     createdAt: new Date(0).toISOString(),
@@ -95,6 +97,15 @@ function createPromptChips(
       `What parts of "${document.name}" appear to be OCR-limited?`,
       "What metadata or visible structure can you still infer from this file?",
       "How should I improve this document before asking detailed questions?",
+    ];
+  }
+
+  if (document.extractionMode === "ocr") {
+    return [
+      `Give me a summary of "${document.name}" and flag any OCR uncertainty.`,
+      "List the most important facts you extracted from the OCR text.",
+      "Which pages look most useful to inspect manually in the viewer?",
+      "What names, dates, or numbers should I double-check against the PDF?",
     ];
   }
 

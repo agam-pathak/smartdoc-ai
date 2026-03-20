@@ -1,25 +1,46 @@
-// Polyfill DOMMatrix for PDF.js compatibility on Vercel Serverless
-if (typeof global !== "undefined" && typeof (global.DOMMatrix as any) === "undefined") {
-  (global as any).DOMMatrix = class {};
-}
+import { PDFParse } from "pdf-parse";
+import { createRequire } from "node:module";
 
+import { extractPdfPagesWithOcr } from "@/lib/ocr";
+import type {
+  DocumentExtractionMode,
+  ParsedPdfPage,
+} from "@/lib/types";
+
+// Polyfill PDF.js DOM globals for Node runtimes.
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { PDFParse } from "pdf-parse";
-
-import type { ParsedPdfPage } from "@/lib/types";
-
 type ParsedPdfDocument = {
   text: string;
   pageCount: number;
   pages: ParsedPdfPage[];
-  extractionMode: "text" | "ocr-recommended";
+  extractionMode: DocumentExtractionMode;
 };
 
+const MIN_PAGE_CHARACTERS_FOR_NATIVE_TEXT = 70;
+const MIN_AVERAGE_DOCUMENT_CHARACTERS = 80;
+
 let didConfigurePdfWorker = false;
+let didConfigurePdfDomPolyfills = false;
+const require = createRequire(import.meta.url);
+const CANVAS_MODULE_NAME = ["@napi-rs", "canvas"].join("/");
+
+type CanvasPolyfillModule = {
+  DOMMatrix: new (...args: unknown[]) => unknown;
+  ImageData: new (...args: unknown[]) => unknown;
+  Path2D: new (...args: unknown[]) => unknown;
+};
+
+function loadCanvasPolyfillModule() {
+  return Function(
+    "nodeRequire",
+    "moduleName",
+    "return nodeRequire(moduleName);",
+  )(require, CANVAS_MODULE_NAME) as CanvasPolyfillModule;
+}
 
 function normalizeExtractedText(text: string) {
   return text
@@ -68,34 +89,136 @@ function configurePdfWorker() {
   didConfigurePdfWorker = true;
 }
 
+function configurePdfDomPolyfills() {
+  if (didConfigurePdfDomPolyfills || typeof global === "undefined") {
+    return;
+  }
+
+  const { DOMMatrix, ImageData, Path2D } = loadCanvasPolyfillModule();
+
+  if (
+    typeof (global.DOMMatrix as typeof DOMMatrix | undefined) === "undefined"
+  ) {
+    (global as { DOMMatrix?: typeof DOMMatrix }).DOMMatrix = DOMMatrix;
+  }
+
+  if (
+    typeof (global.ImageData as typeof ImageData | undefined) === "undefined"
+  ) {
+    (global as { ImageData?: typeof ImageData }).ImageData = ImageData;
+  }
+
+  if (typeof (global.Path2D as typeof Path2D | undefined) === "undefined") {
+    (global as { Path2D?: typeof Path2D }).Path2D = Path2D;
+  }
+
+  didConfigurePdfDomPolyfills = true;
+}
+
+function pickBestPageText(nativeText: string, ocrText: string) {
+  if (!ocrText) {
+    return nativeText;
+  }
+
+  if (!nativeText) {
+    return ocrText;
+  }
+
+  const normalizedNativeText = normalizeExtractedText(nativeText).toLowerCase();
+  const normalizedOcrText = normalizeExtractedText(ocrText).toLowerCase();
+
+  if (normalizedNativeText.includes(normalizedOcrText)) {
+    return nativeText;
+  }
+
+  if (normalizedOcrText.includes(normalizedNativeText)) {
+    return ocrText;
+  }
+
+  return ocrText.length > nativeText.length * 1.15 ? ocrText : nativeText;
+}
+
 export async function parsePdfFile(filePath: string): Promise<ParsedPdfDocument> {
   configurePdfWorker();
+  configurePdfDomPolyfills();
 
   const buffer = await readFile(filePath);
   const parser = new PDFParse({ data: new Uint8Array(buffer) });
 
   try {
     const result = await parser.getText();
-    const pages = result.pages
-      .map((page) => ({
-        pageNumber: page.num,
-        text: normalizeExtractedText(page.text),
-      }))
-      .filter((page) => page.text.length > 0);
+    const extractedPages = result.pages.map((page) => ({
+      pageNumber: page.num,
+      text: normalizeExtractedText(page.text),
+    }));
+    const pageCount =
+      result.total ||
+      Math.max(
+        1,
+        ...extractedPages.map((page) => page.pageNumber),
+      );
+    const pageTexts = new Map<number, string>();
+
+    for (const page of extractedPages) {
+      pageTexts.set(page.pageNumber, page.text);
+    }
+
+    const pageNumbersNeedingOcr = Array.from(
+      { length: pageCount },
+      (_, index) => index + 1,
+    ).filter(
+      (pageNumber) =>
+        (pageTexts.get(pageNumber) ?? "").length <
+        MIN_PAGE_CHARACTERS_FOR_NATIVE_TEXT,
+    );
+
+    let ocrRecoveredPageCount = 0;
+
+    if (pageNumbersNeedingOcr.length > 0) {
+      try {
+        const ocrPages = await extractPdfPagesWithOcr(
+          new Uint8Array(buffer),
+          pageNumbersNeedingOcr,
+        );
+
+        for (const ocrPage of ocrPages) {
+          const nextPageText = pickBestPageText(
+            pageTexts.get(ocrPage.pageNumber) ?? "",
+            ocrPage.text,
+          );
+
+          pageTexts.set(ocrPage.pageNumber, nextPageText);
+
+          if (nextPageText.length >= MIN_PAGE_CHARACTERS_FOR_NATIVE_TEXT) {
+            ocrRecoveredPageCount += 1;
+          }
+        }
+      } catch (error) {
+        console.error("PDF OCR Failure:", error);
+      }
+    }
+
+    const pages = Array.from({ length: pageCount }, (_, index) => ({
+      pageNumber: index + 1,
+      text: normalizeExtractedText(pageTexts.get(index + 1) ?? ""),
+    })).filter((page) => page.text.length > 0);
 
     const text = normalizeExtractedText(
       pages.map((page) => page.text).join("\n\n") || result.text || "",
     );
     const averageCharactersPerPage =
-      pages.length > 0 ? text.length / pages.length : text.length;
-    const extractionMode =
-      text.length === 0 || averageCharactersPerPage < 80
-        ? "ocr-recommended"
-        : "text";
+      pageCount > 0 ? text.length / pageCount : text.length;
+    const extractionMode: DocumentExtractionMode =
+      ocrRecoveredPageCount > 0
+        ? "ocr"
+        : text.length === 0 ||
+            averageCharactersPerPage < MIN_AVERAGE_DOCUMENT_CHARACTERS
+          ? "ocr-recommended"
+          : "text";
 
     return {
       text,
-      pageCount: result.total || pages.length,
+      pageCount,
       extractionMode,
       pages:
         pages.length > 0

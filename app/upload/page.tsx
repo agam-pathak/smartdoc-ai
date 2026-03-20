@@ -313,7 +313,7 @@ export default function UploadPage() {
                   </div>
                   <p className="mt-3 text-xs text-slate-400">
                     {uploadStage === "indexing"
-                      ? "Parsing pages, chunking text, and preparing retrieval vectors."
+                      ? "Parsing pages, running OCR when needed, and preparing retrieval vectors."
                       : "Streaming the PDF into the private workspace."}
                   </p>
                 </div>
@@ -354,6 +354,10 @@ export default function UploadPage() {
                {lastIndexedDocument.extractionMode === "ocr-recommended" ? (
                  <p className="rounded-xl border border-amber-400/20 bg-amber-400/10 px-4 py-3 text-xs text-amber-200">
                    This file looks scan-heavy. It was kept in the workspace, but grounded answers may be limited until OCR is available.
+                 </p>
+               ) : lastIndexedDocument.extractionMode === "ocr" ? (
+                 <p className="rounded-xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-3 text-xs text-cyan-100">
+                   OCR completed for low-text pages. The file is ready for grounded chat, but verify critical quotes and figures against the viewer.
                  </p>
                ) : (
                  <p className="rounded-xl border border-emerald-400/20 bg-emerald-400/10 px-4 py-3 text-xs text-emerald-200">

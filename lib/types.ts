@@ -1,3 +1,5 @@
+export type DocumentExtractionMode = "text" | "ocr" | "ocr-recommended";
+
 export type IndexedDocument = {
   id: string;
   name: string;
@@ -8,7 +10,7 @@ export type IndexedDocument = {
   chunkCount: number;
   indexedAt: string;
   embeddingModel: string;
-  extractionMode?: "text" | "ocr-recommended";
+  extractionMode?: DocumentExtractionMode;
   notes?: string;
   bookmarkedPages?: number[];
   lastOpenedAt?: string;

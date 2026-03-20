@@ -270,6 +270,11 @@ export default function PDFViewer({
                 <FileWarning className="h-3 w-3" />
                 OCR recommended
               </span>
+            ) : document?.extractionMode === "ocr" ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-cyan-400/10 px-2 py-0.5 text-[10px] uppercase tracking-wider text-cyan-200">
+                <SearchCheck className="h-3 w-3" />
+                OCR indexed
+              </span>
             ) : null}
           </div>
           {focusedSource ? (
