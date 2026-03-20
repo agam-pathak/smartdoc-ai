@@ -1,7 +1,10 @@
 import { copyFile, mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 
-export const LEXORA_ROOT = path.join(process.cwd(), ".lexora");
+const isVercel = process.env.VERCEL === "1";
+export const LEXORA_ROOT = isVercel 
+  ? path.join("/tmp", ".lexora") 
+  : path.join(process.cwd(), ".lexora");
 export const USER_WORKSPACES_ROOT = path.join(LEXORA_ROOT, "users");
 export const LEGACY_INDEX_ROOT = path.join(LEXORA_ROOT, "indexes");
 export const LEGACY_MANIFEST_PATH = path.join(LEXORA_ROOT, "manifest.json");
