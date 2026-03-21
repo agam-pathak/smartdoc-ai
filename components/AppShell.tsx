@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import {
   FileUp,
+  GraduationCap,
   LayoutDashboard,
   LoaderCircle,
   LogOut,
@@ -24,6 +25,7 @@ const navLinks = [
   { href: "/", label: "Home", icon: LayoutDashboard },
   { href: "/upload", label: "Library", icon: FileUp },
   { href: "/chat", label: "Workspace", icon: MessageSquareText },
+  { href: "/scholar", label: "Scholar", icon: GraduationCap },
 ];
 
 export default function AppShell({ children, session }: AppShellProps) {
@@ -33,6 +35,9 @@ export default function AppShell({ children, session }: AppShellProps) {
 
   const isAuthPage = pathname === "/auth";
   const isChatPage = pathname === "/chat" || pathname.startsWith("/chat/");
+  const isScholarPage =
+    pathname === "/scholar" || pathname.startsWith("/scholar/");
+  const isWorkspacePage = isChatPage || isScholarPage;
 
   async function handleSignOut() {
     setSigningOut(true);
@@ -140,7 +145,7 @@ export default function AppShell({ children, session }: AppShellProps) {
       )}
 
       {/* ── ROBUST MAIN CONTAINER ── */}
-      <main className={`relative flex-1 ${isChatPage ? 'overflow-hidden' : 'overflow-y-auto overflow-x-hidden'}`}>
+      <main className={`relative flex-1 ${isWorkspacePage ? 'overflow-hidden' : 'overflow-y-auto overflow-x-hidden'}`}>
         {!isAuthPage && (
           <>
             <div className="workspace-orb workspace-orb-left" />
@@ -149,7 +154,7 @@ export default function AppShell({ children, session }: AppShellProps) {
         )}
         
         {/* Children wrapper - Fix: No more height constraint for scrollable pages */}
-        <div className={`relative z-10 w-full ${isChatPage ? 'h-full' : 'min-h-full'}`}>
+        <div className={`relative z-10 w-full ${isWorkspacePage ? 'h-full' : 'min-h-full'}`}>
           {children}
         </div>
       </main>
