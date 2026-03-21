@@ -18,6 +18,7 @@ import {
 } from "react";
 
 import ChatBox from "@/components/ChatBox";
+import { extractPdfDocumentFromUrl } from "@/lib/clientPdfExtraction";
 import type { ChatSource, IndexedDocument } from "@/lib/types";
 
 const PDFViewer = dynamic(() => import("@/components/PDFViewer"), {
@@ -32,10 +33,12 @@ function ChatWorkspace() {
   const [selectedDocumentId, setSelectedDocumentId] = useState("");
   const [loadingDocuments, setLoadingDocuments] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
+  const [repairingDocumentId, setRepairingDocumentId] = useState("");
   const [viewerPageNumber, setViewerPageNumber] = useState(1);
   const [focusedSource, setFocusedSource] = useState<ChatSource | null>(null);
   const [mobilePane, setMobilePane] = useState<"viewer" | "chat">("chat");
   const selectedDocumentIdRef = useRef(selectedDocumentId);
+  const repairedDocumentsRef = useRef(new Set<string>());
 
   useEffect(() => {
     selectedDocumentIdRef.current = selectedDocumentId;
@@ -109,6 +112,74 @@ function ChatWorkspace() {
     [documents, selectedDocumentId],
   );
 
+  useEffect(() => {
+    if (
+      !selectedDocument ||
+      (selectedDocument.chunkCount > 0 &&
+        selectedDocument.extractionMode !== "ocr-recommended") ||
+      repairedDocumentsRef.current.has(selectedDocument.id)
+    ) {
+      return;
+    }
+
+    const targetDocument = selectedDocument;
+
+    repairedDocumentsRef.current.add(targetDocument.id);
+    let cancelled = false;
+
+    async function repairSearchableText() {
+      setRepairingDocumentId(targetDocument.id);
+
+      try {
+        const parsedPdf = await extractPdfDocumentFromUrl(
+          `/api/files/serve?path=${encodeURIComponent(targetDocument.fileUrl)}`,
+        );
+
+        if (parsedPdf.pages.length === 0) {
+          return;
+        }
+
+        const response = await fetch("/api/index", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            documentId: targetDocument.id,
+            parsedPdf,
+          }),
+        });
+        const data = await response.json();
+
+        if (!response.ok || !data.document || cancelled) {
+          return;
+        }
+
+        startTransition(() => {
+          setDocuments((currentDocuments) =>
+            currentDocuments.map((document) =>
+              document.id === data.document.id ? data.document : document,
+            ),
+          );
+        });
+      } catch (error) {
+        console.warn("Workspace auto-repair failed for searchable text.", error);
+      } finally {
+        if (!cancelled) {
+          setRepairingDocumentId((currentId) =>
+            currentId === targetDocument.id ? "" : currentId,
+          );
+        }
+      }
+    }
+
+    void repairSearchableText();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedDocument]);
+
   if (!loadingDocuments && documents.length === 0) {
     return (
       <div className="flex h-full items-center justify-center p-8 text-center">
@@ -175,6 +246,11 @@ function ChatWorkspace() {
         {errorMessage ? (
           <p className="border-b border-rose-400/20 bg-rose-400/5 px-4 py-2 text-xs text-rose-300">
             {errorMessage}
+          </p>
+        ) : null}
+        {repairingDocumentId === selectedDocument?.id ? (
+          <p className="border-b border-cyan-400/20 bg-cyan-400/5 px-4 py-2 text-xs text-cyan-200">
+            Rebuilding searchable text from the local PDF view...
           </p>
         ) : null}
 

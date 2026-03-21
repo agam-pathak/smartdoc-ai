@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getSession } from "@/lib/auth";
+import { coerceParsedPdfDocument } from "@/lib/parsedPdf";
 import {
   indexUntrackedUploads,
   reindexAllDocuments,
@@ -24,12 +25,20 @@ export async function POST(request: Request) {
 
     const body = await request
       .json()
-      .catch(() => ({ documentId: undefined as string | undefined }));
+      .catch(
+        () =>
+          ({
+            documentId: undefined as string | undefined,
+            parsedPdf: undefined as unknown,
+          }),
+      );
+    const parsedPdf = coerceParsedPdfDocument(body.parsedPdf);
 
     if (typeof body.documentId === "string" && body.documentId.trim()) {
       const document = await reindexDocument(
         session.userId,
         body.documentId.trim(),
+        parsedPdf,
       );
       const extractionLimited =
         document.chunkCount === 0 &&

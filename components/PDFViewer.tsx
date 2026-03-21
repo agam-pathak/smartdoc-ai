@@ -24,7 +24,7 @@ import { Document, Page, pdfjs } from "react-pdf";
 import type { ChatSource, IndexedDocument } from "@/lib/types";
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-  "pdfjs-dist/build/pdf.worker.min.mjs",
+  "pdfjs-dist/legacy/build/pdf.worker.min.mjs",
   import.meta.url,
 ).toString();
 

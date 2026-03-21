@@ -4,6 +4,7 @@ import path from "node:path";
 import { NextResponse } from "next/server";
 
 import { getSession } from "@/lib/auth";
+import { coerceParsedPdfDocument } from "@/lib/parsedPdf";
 import {
   persistUserUpload,
   resolveUserUploadUrl,
@@ -47,6 +48,7 @@ export async function POST(request: Request) {
 
     const formData = await request.formData();
     const uploadedFile = formData.get("file");
+    const parsedPdf = coerceParsedPdfDocument(formData.get("parsedPdf"));
 
     if (!(uploadedFile instanceof File)) {
       return NextResponse.json(
@@ -93,6 +95,7 @@ export async function POST(request: Request) {
       fileName: safeFileName,
       fileUrl,
       sizeBytes: buffer.byteLength,
+      parsedPdf,
     });
     const extractionLimited =
       document.chunkCount === 0 && document.extractionMode === "ocr-recommended";

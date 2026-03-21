@@ -21,6 +21,13 @@ export type ParsedPdfPage = {
   text: string;
 };
 
+export type ParsedPdfDocument = {
+  text: string;
+  pageCount: number;
+  pages: ParsedPdfPage[];
+  extractionMode: DocumentExtractionMode;
+};
+
 export type ChunkRecord = {
   chunkIndex: number;
   text: string;

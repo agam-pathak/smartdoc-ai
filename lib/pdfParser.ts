@@ -10,8 +10,12 @@ import { PDFParse } from "pdf-parse";
 import { createRequire } from "node:module";
 
 import { extractPdfPagesWithOcr } from "@/lib/ocr";
+import {
+  buildParsedPdfDocument,
+  normalizeExtractedText,
+} from "@/lib/parsedPdf";
 import type {
-  DocumentExtractionMode,
+  ParsedPdfDocument,
   ParsedPdfPage,
 } from "@/lib/types";
 
@@ -21,13 +25,6 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-type ParsedPdfDocument = {
-  text: string;
-  pageCount: number;
-  pages: ParsedPdfPage[];
-  extractionMode: DocumentExtractionMode;
-};
-
 type NativePdfExtraction = {
   text: string;
   pageCount: number;
@@ -35,7 +32,6 @@ type NativePdfExtraction = {
 };
 
 const MIN_PAGE_CHARACTERS_FOR_NATIVE_TEXT = 70;
-const MIN_AVERAGE_DOCUMENT_CHARACTERS = 80;
 
 let didConfigurePdfWorker = false;
 let didConfigureOcrDomPolyfills = false;
@@ -54,16 +50,6 @@ function loadCanvasPolyfillModule() {
     "moduleName",
     "return nodeRequire(moduleName);",
   )(require, CANVAS_MODULE_NAME) as CanvasPolyfillModule;
-}
-
-function normalizeExtractedText(text: string) {
-  return text
-    .replace(/\u0000/g, "")
-    .replace(/\r/g, "")
-    .replace(/[ \t]+\n/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .replace(/[ \t]{2,}/g, " ")
-    .trim();
 }
 
 function configurePdfWorker() {
@@ -332,25 +318,9 @@ export async function parsePdfFile(filePath: string): Promise<ParsedPdfDocument>
     text: normalizeExtractedText(pageTexts.get(index + 1) ?? ""),
   })).filter((page) => page.text.length > 0);
 
-  const text = normalizeExtractedText(
-    pages.map((page) => page.text).join("\n\n") || nativeExtraction.text || "",
-  );
-  const averageCharactersPerPage =
-    nativeExtraction.pageCount > 0
-      ? text.length / nativeExtraction.pageCount
-      : text.length;
-  const extractionMode: DocumentExtractionMode =
-    ocrRecoveredPageCount > 0
-      ? "ocr"
-      : text.length === 0 ||
-          averageCharactersPerPage < MIN_AVERAGE_DOCUMENT_CHARACTERS
-        ? "ocr-recommended"
-        : "text";
-
-  return {
-    text,
-    pageCount: nativeExtraction.pageCount,
-    extractionMode,
+  return buildParsedPdfDocument(
     pages,
-  };
+    nativeExtraction.pageCount,
+    ocrRecoveredPageCount > 0 ? "ocr" : undefined,
+  );
 }

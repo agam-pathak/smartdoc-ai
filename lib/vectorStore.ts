@@ -37,6 +37,7 @@ import {
 } from "@/lib/storage";
 import type {
   IndexedDocument,
+  ParsedPdfDocument,
   RetrievedChunk,
   StoredChunkRecord,
 } from "@/lib/types";
@@ -107,6 +108,7 @@ type IndexDocumentInput = {
   fileName: string;
   fileUrl: string;
   sizeBytes: number;
+  parsedPdf?: ParsedPdfDocument | null;
 };
 
 const LEGACY_UPLOADS_ROOT = LEGACY_PUBLIC_UPLOADS_ROOT;
@@ -772,18 +774,21 @@ export async function indexDocument(input: IndexDocumentInput) {
     throw new Error("Uploaded PDF file could not be found for indexing.");
   }
 
-  let parsedPdf;
-  try {
-    const { parsePdfFile } = await import("@/lib/pdfParser");
-    parsedPdf = await parsePdfFile(filePath);
-  } catch (error) {
-    console.error("PDF Parsing Failure:", error);
-    parsedPdf = {
-      text: "",
-      pageCount: 1,
-      pages: [],
-      extractionMode: "ocr-recommended" as const,
-    };
+  let parsedPdf = input.parsedPdf ?? null;
+
+  if (!parsedPdf) {
+    try {
+      const { parsePdfFile } = await import("@/lib/pdfParser");
+      parsedPdf = await parsePdfFile(filePath);
+    } catch (error) {
+      console.error("PDF Parsing Failure:", error);
+      parsedPdf = {
+        text: "",
+        pageCount: 1,
+        pages: [],
+        extractionMode: "ocr-recommended",
+      };
+    }
   }
 
   const chunks = chunkText(parsedPdf.pages, {
@@ -995,7 +1000,11 @@ export async function searchAcrossIndexedDocuments(
     .slice(0, topK);
 }
 
-export async function reindexDocument(userId: string, documentId: string) {
+export async function reindexDocument(
+  userId: string,
+  documentId: string,
+  parsedPdf?: ParsedPdfDocument | null,
+) {
   const document = await getDocument(userId, documentId);
 
   if (!document) {
@@ -1009,6 +1018,7 @@ export async function reindexDocument(userId: string, documentId: string) {
     fileName: document.fileName,
     fileUrl: document.fileUrl,
     sizeBytes: document.sizeBytes,
+    parsedPdf,
   });
 }
 

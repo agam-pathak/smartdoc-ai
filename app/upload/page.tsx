@@ -20,9 +20,20 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { startTransition, useEffect, useMemo, useState } from "react";
 
+import {
+  extractPdfDocumentFromFile,
+  extractPdfDocumentFromUrl,
+} from "@/lib/clientPdfExtraction";
 import type { IndexedDocument } from "@/lib/types";
 
 const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
+type UploadStage =
+  | "idle"
+  | "analyzing"
+  | "uploading"
+  | "indexing"
+  | "ready"
+  | "error";
 
 function formatBytes(sizeBytes: number) {
   if (sizeBytes < 1024 * 1024) {
@@ -47,7 +58,7 @@ export default function UploadPage() {
   const [errorMessage, setErrorMessage] = useState("");
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
-  const [uploadStage, setUploadStage] = useState("idle");
+  const [uploadStage, setUploadStage] = useState<UploadStage>("idle");
   const [dragActive, setDragActive] = useState(false);
   const [searchValue, setSearchValue] = useState("");
   const [sortMode, setSortMode] = useState("recent");
@@ -88,11 +99,24 @@ export default function UploadPage() {
     setErrorMessage("");
     setStatusMessage("");
     setUploadProgress(0);
-    setUploadStage("uploading");
+    setUploadStage("analyzing");
     setLastIndexedDocument(null);
     try {
+      let parsedPdf = null;
+
+      try {
+        setUploadProgress(10);
+        parsedPdf = await extractPdfDocumentFromFile(selectedFile);
+        setUploadProgress(parsedPdf.pages.length > 0 ? 22 : 14);
+      } catch (error) {
+        console.warn("Local PDF extraction failed before upload.", error);
+      }
+
       const formData = new FormData();
       formData.append("file", selectedFile);
+      if (parsedPdf) {
+        formData.append("parsedPdf", JSON.stringify(parsedPdf));
+      }
 
       const data = await new Promise<{ message?: string; document: IndexedDocument }>((resolve, reject) => {
         const request = new XMLHttpRequest();
@@ -107,7 +131,7 @@ export default function UploadPage() {
 
           const nextProgress = Math.min(
             78,
-            Math.round((event.loaded / event.total) * 78),
+            20 + Math.round((event.loaded / event.total) * 58),
           );
           setUploadProgress(nextProgress);
         };
@@ -175,16 +199,35 @@ export default function UploadPage() {
   }
 
   async function reindexIndexedDocument(documentId: string) {
+    const document = documents.find((entry) => entry.id === documentId);
+
+    if (!document) {
+      return;
+    }
+
     setReindexingDocumentId(documentId);
     setErrorMessage("");
 
     try {
+      let parsedPdf = null;
+
+      try {
+        parsedPdf = await extractPdfDocumentFromUrl(
+          `/api/files/serve?path=${encodeURIComponent(document.fileUrl)}`,
+        );
+      } catch (error) {
+        console.warn("Local PDF extraction failed before reindex.", error);
+      }
+
       const response = await fetch("/api/index", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ documentId }),
+        body: JSON.stringify({
+          documentId,
+          parsedPdf,
+        }),
       });
       const data = await response.json();
 
@@ -369,7 +412,9 @@ export default function UploadPage() {
                     />
                   </div>
                   <p className="mt-3 text-xs text-slate-400">
-                    {uploadStage === "indexing"
+                    {uploadStage === "analyzing"
+                      ? "Reading searchable text locally in your browser before upload."
+                      : uploadStage === "indexing"
                       ? "Parsing pages, running OCR when needed, and preparing retrieval vectors."
                       : "Streaming the PDF into the private workspace."}
                   </p>
