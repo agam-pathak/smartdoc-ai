@@ -18,7 +18,6 @@ import {
 } from "react";
 
 import ChatBox from "@/components/ChatBox";
-import WorkspaceModeSwitch from "@/components/WorkspaceModeSwitch";
 import { extractPdfDocumentFromUrl } from "@/lib/clientPdfExtraction";
 import type {
   ChatSource,
@@ -220,103 +219,97 @@ function ChatWorkspace() {
   }
 
   return (
-    <div className="flex h-full flex-col gap-4 px-4 py-4 sm:px-5">
-      <WorkspaceModeSwitch />
-
-      <div className="flex-1 min-h-0 overflow-hidden rounded-[32px] border border-white/[0.08] bg-[linear-gradient(180deg,rgba(12,18,30,0.88),rgba(8,12,20,0.8))] shadow-[0_30px_110px_rgba(2,8,23,0.32)]">
-        <div className="flex h-full flex-col">
-          <div className="border-b border-white/[0.06] px-4 py-2 xl:hidden">
-            <div className="inline-flex items-center gap-1 rounded-xl border border-white/[0.08] bg-white/[0.03] p-1">
-              <button
-                type="button"
-                onClick={() => setMobilePane("viewer")}
-                className={`rounded-lg px-3 py-1.5 text-xs transition ${
-                  mobilePane === "viewer"
-                    ? "bg-white/[0.08] text-white"
-                    : "text-slate-400"
-                }`}
-              >
-                <FileText className="mr-1 inline h-3.5 w-3.5" />
-                Viewer
-              </button>
-              <button
-                type="button"
-                onClick={() => setMobilePane("chat")}
-                className={`rounded-lg px-3 py-1.5 text-xs transition ${
-                  mobilePane === "chat"
-                    ? "bg-white/[0.08] text-white"
-                    : "text-slate-400"
-                }`}
-              >
-                <MessageSquareText className="mr-1 inline h-3.5 w-3.5" />
-                Chat
-              </button>
-            </div>
-          </div>
-
-          <div className="grid h-full min-h-0 grid-cols-1 gap-0 xl:grid-cols-2">
-            {/* ── Left: PDF Viewer ── */}
-            <section
-              className={`${
-                mobilePane === "viewer" ? "flex" : "hidden"
-              } min-h-0 flex-col overflow-hidden border-r border-white/[0.06] xl:flex`}
-            >
-              {errorMessage ? (
-                <p className="border-b border-rose-400/20 bg-rose-400/5 px-4 py-2 text-xs text-rose-300">
-                  {errorMessage}
-                </p>
-              ) : null}
-              {repairingDocumentId === selectedDocument?.id ? (
-                <p className="border-b border-cyan-400/20 bg-cyan-400/5 px-4 py-2 text-xs text-cyan-200">
-                  Rebuilding searchable text from the local PDF view...
-                </p>
-              ) : null}
-
-              <PDFViewer
-                key={selectedDocument?.fileUrl ?? "no-document"}
-                document={selectedDocument}
-                pageNumber={viewerPageNumber}
-                onPageChange={setViewerPageNumber}
-                focusedSource={focusedSource}
-                onDocumentUpdate={(updatedDocument) =>
-                  setDocuments((currentDocuments) =>
-                    currentDocuments.map((document) =>
-                      document.id === updatedDocument.id ? updatedDocument : document,
-                    ),
-                  )
-                }
-              />
-            </section>
-
-            {/* ── Right: Chat ── */}
-            <section
-              className={`${
-                mobilePane === "chat" ? "flex" : "hidden"
-              } min-h-0 flex-col overflow-hidden xl:flex`}
-            >
-              <ChatBox
-                documents={documents}
-                selectedDocumentId={selectedDocumentId}
-                onDocumentChange={(documentId) => {
-                  setSelectedDocumentId(documentId);
-                  setViewerPageNumber(1);
-                  setFocusedSource(null);
-                  setMobilePane("viewer");
-                }}
-                onSourceSelect={(source) => {
-                  if (source.documentId && source.documentId !== selectedDocumentId) {
-                    setSelectedDocumentId(source.documentId);
-                  }
-
-                  setViewerPageNumber(source.pageStart);
-                  setFocusedSource(source);
-                  setMobilePane("viewer");
-                }}
-              />
-            </section>
-          </div>
+    <div className="flex h-full flex-col">
+      <div className="border-b border-white/[0.06] px-4 py-2 xl:hidden">
+        <div className="inline-flex items-center gap-1 rounded-xl border border-white/[0.08] bg-white/[0.03] p-1">
+          <button
+            type="button"
+            onClick={() => setMobilePane("viewer")}
+            className={`rounded-lg px-3 py-1.5 text-xs transition ${
+              mobilePane === "viewer"
+                ? "bg-white/[0.08] text-white"
+                : "text-slate-400"
+            }`}
+          >
+            <FileText className="mr-1 inline h-3.5 w-3.5" />
+            Viewer
+          </button>
+          <button
+            type="button"
+            onClick={() => setMobilePane("chat")}
+            className={`rounded-lg px-3 py-1.5 text-xs transition ${
+              mobilePane === "chat"
+                ? "bg-white/[0.08] text-white"
+                : "text-slate-400"
+            }`}
+          >
+            <MessageSquareText className="mr-1 inline h-3.5 w-3.5" />
+            Chat
+          </button>
         </div>
       </div>
+
+      <div className="grid h-full min-h-0 grid-cols-1 gap-0 xl:grid-cols-2">
+      {/* ── Left: PDF Viewer ── */}
+      <section
+        className={`${
+          mobilePane === "viewer" ? "flex" : "hidden"
+        } min-h-0 flex-col overflow-hidden border-r border-white/[0.06] xl:flex`}
+      >
+        {errorMessage ? (
+          <p className="border-b border-rose-400/20 bg-rose-400/5 px-4 py-2 text-xs text-rose-300">
+            {errorMessage}
+          </p>
+        ) : null}
+        {repairingDocumentId === selectedDocument?.id ? (
+          <p className="border-b border-cyan-400/20 bg-cyan-400/5 px-4 py-2 text-xs text-cyan-200">
+            Rebuilding searchable text from the local PDF view...
+          </p>
+        ) : null}
+
+        <PDFViewer
+          key={selectedDocument?.fileUrl ?? "no-document"}
+          document={selectedDocument}
+          pageNumber={viewerPageNumber}
+          onPageChange={setViewerPageNumber}
+          focusedSource={focusedSource}
+          onDocumentUpdate={(updatedDocument) =>
+            setDocuments((currentDocuments) =>
+              currentDocuments.map((document) =>
+                document.id === updatedDocument.id ? updatedDocument : document,
+              ),
+            )
+          }
+        />
+      </section>
+
+      {/* ── Right: Chat ── */}
+      <section
+        className={`${
+          mobilePane === "chat" ? "flex" : "hidden"
+        } min-h-0 flex-col overflow-hidden xl:flex`}
+      >
+        <ChatBox
+          documents={documents}
+          selectedDocumentId={selectedDocumentId}
+          onDocumentChange={(documentId) => {
+            setSelectedDocumentId(documentId);
+            setViewerPageNumber(1);
+            setFocusedSource(null);
+            setMobilePane("viewer");
+          }}
+          onSourceSelect={(source) => {
+            if (source.documentId && source.documentId !== selectedDocumentId) {
+              setSelectedDocumentId(source.documentId);
+            }
+
+            setViewerPageNumber(source.pageStart);
+            setFocusedSource(source);
+            setMobilePane("viewer");
+          }}
+        />
+      </section>
+    </div>
     </div>
   );
 }

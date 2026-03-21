@@ -1,50 +1,31 @@
 "use client";
 
-import {
-  Search,
-  BrainCircuit,
-  FileSearch,
-  Loader2,
-  type LucideIcon,
-} from "lucide-react";
+import { Search, BrainCircuit, FileSearch, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 
-export type TypingStep = {
-  text: string;
-  icon: LucideIcon;
-};
-
-const defaultSteps: TypingStep[] = [
+const steps = [
   { text: "Analyzing query", icon: BrainCircuit },
   { text: "Searching document index", icon: Search },
   { text: "Reading relevant chunks", icon: FileSearch },
   { text: "Synthesizing answer", icon: Loader2 },
 ];
 
-type TypingIndicatorProps = {
-  title?: string;
-  steps?: TypingStep[];
-};
-
-export default function TypingIndicator({
-  title = "Lexora Engine",
-  steps = defaultSteps,
-}: TypingIndicatorProps) {
+export default function TypingIndicator() {
   const [stepIndex, setStepIndex] = useState(0);
 
   useEffect(() => {
-    const timeouts: number[] = [];
+    const intervals = [300, 900, 1800]; // Progressively move through steps
+    const timeouts: NodeJS.Timeout[] = [];
 
-    steps.slice(1).forEach((_, index) => {
-      const delay = [300, 900, 1800, 2600][index] ?? 300 + (index + 1) * 650;
-      const timeout = window.setTimeout(() => {
+    intervals.forEach((delay, index) => {
+      const timeout = setTimeout(() => {
         setStepIndex(index + 1);
       }, delay);
       timeouts.push(timeout);
     });
 
-    return () => timeouts.forEach((timeout) => window.clearTimeout(timeout));
-  }, [steps]);
+    return () => timeouts.forEach((t) => clearTimeout(t));
+  }, []);
 
   const StepIcon = steps[stepIndex].icon;
 
@@ -56,7 +37,7 @@ export default function TypingIndicator({
         </div>
         <div className="flex flex-col">
           <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">
-            {title}
+            Lexora Engine
           </span>
           <span className="text-sm font-medium text-slate-200">
             {steps[stepIndex].text}...
