@@ -28,6 +28,12 @@ type ParsedPdfDocument = {
   extractionMode: DocumentExtractionMode;
 };
 
+type NativePdfExtraction = {
+  text: string;
+  pageCount: number;
+  pages: ParsedPdfPage[];
+};
+
 const MIN_PAGE_CHARACTERS_FOR_NATIVE_TEXT = 70;
 const MIN_AVERAGE_DOCUMENT_CHARACTERS = 80;
 
@@ -146,11 +152,47 @@ function pickBestPageText(nativeText: string, ocrText: string) {
   return ocrText.length > nativeText.length * 1.15 ? ocrText : nativeText;
 }
 
-export async function parsePdfFile(filePath: string): Promise<ParsedPdfDocument> {
+function isPdfJsTextItem(
+  value: unknown,
+): value is {
+  str: string;
+  hasEOL?: boolean;
+} {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      "str" in value &&
+      typeof value.str === "string",
+  );
+}
+
+function normalizePdfJsPageText(items: unknown[]) {
+  const parts: string[] = [];
+
+  for (const item of items) {
+    if (!isPdfJsTextItem(item)) {
+      continue;
+    }
+
+    const text = item.str.trim();
+
+    if (!text) {
+      continue;
+    }
+
+    parts.push(text);
+    parts.push(item.hasEOL ? "\n" : " ");
+  }
+
+  return normalizeExtractedText(parts.join(""));
+}
+
+async function extractNativeTextWithPdfParse(
+  buffer: Uint8Array,
+): Promise<NativePdfExtraction> {
   configurePdfWorker();
 
-  const buffer = await readFile(filePath);
-  const parser = new PDFParse({ data: new Uint8Array(buffer) });
+  const parser = new PDFParse({ data: buffer });
 
   try {
     const result = await parser.getText();
@@ -164,74 +206,151 @@ export async function parsePdfFile(filePath: string): Promise<ParsedPdfDocument>
         1,
         ...extractedPages.map((page) => page.pageNumber),
       );
-    const pageTexts = new Map<number, string>();
-
-    for (const page of extractedPages) {
-      pageTexts.set(page.pageNumber, page.text);
-    }
-
-    const pageNumbersNeedingOcr = Array.from(
-      { length: pageCount },
-      (_, index) => index + 1,
-    ).filter(
-      (pageNumber) =>
-        (pageTexts.get(pageNumber) ?? "").length <
-        MIN_PAGE_CHARACTERS_FOR_NATIVE_TEXT,
-    );
-
-    let ocrRecoveredPageCount = 0;
-
-    if (pageNumbersNeedingOcr.length > 0) {
-      try {
-        configureOcrDomPolyfills();
-
-        const ocrPages = await extractPdfPagesWithOcr(
-          new Uint8Array(buffer),
-          pageNumbersNeedingOcr,
-        );
-
-        for (const ocrPage of ocrPages) {
-          const nextPageText = pickBestPageText(
-            pageTexts.get(ocrPage.pageNumber) ?? "",
-            ocrPage.text,
-          );
-
-          pageTexts.set(ocrPage.pageNumber, nextPageText);
-
-          if (nextPageText.length >= MIN_PAGE_CHARACTERS_FOR_NATIVE_TEXT) {
-            ocrRecoveredPageCount += 1;
-          }
-        }
-      } catch (error) {
-        console.error("PDF OCR Failure:", error);
-      }
-    }
-
     const pages = Array.from({ length: pageCount }, (_, index) => ({
       pageNumber: index + 1,
-      text: normalizeExtractedText(pageTexts.get(index + 1) ?? ""),
+      text: normalizeExtractedText(
+        extractedPages.find((page) => page.pageNumber === index + 1)?.text ?? "",
+      ),
     })).filter((page) => page.text.length > 0);
 
-    const text = normalizeExtractedText(
-      pages.map((page) => page.text).join("\n\n") || result.text || "",
-    );
-    const averageCharactersPerPage =
-      pageCount > 0 ? text.length / pageCount : text.length;
-    const extractionMode: DocumentExtractionMode =
-      ocrRecoveredPageCount > 0
-        ? "ocr"
-        : text.length === 0 ||
-            averageCharactersPerPage < MIN_AVERAGE_DOCUMENT_CHARACTERS
-          ? "ocr-recommended"
-          : "text";
-
     return {
-      text,
+      text: normalizeExtractedText(
+        pages.map((page) => page.text).join("\n\n") || result.text || "",
+      ),
       pageCount,
-      extractionMode,
       pages,
     };
   } finally {
     await parser.destroy();
   }
+}
+
+async function extractNativeTextWithPdfJs(
+  buffer: Uint8Array,
+): Promise<NativePdfExtraction> {
+  const { getDocument } = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const loadingTask = getDocument({
+    data: buffer,
+    useWorkerFetch: false,
+    isEvalSupported: false,
+    useWasm: false,
+  });
+  const pdfDocument = await loadingTask.promise;
+
+  try {
+    const pages: ParsedPdfPage[] = [];
+
+    for (let pageNumber = 1; pageNumber <= pdfDocument.numPages; pageNumber += 1) {
+      const page = await pdfDocument.getPage(pageNumber);
+
+      try {
+        const textContent = await page.getTextContent();
+        const text = normalizePdfJsPageText(textContent.items);
+
+        if (text) {
+          pages.push({
+            pageNumber,
+            text,
+          });
+        }
+      } finally {
+        page.cleanup();
+      }
+    }
+
+    return {
+      text: normalizeExtractedText(pages.map((page) => page.text).join("\n\n")),
+      pageCount: pdfDocument.numPages,
+      pages,
+    };
+  } finally {
+    await loadingTask.destroy();
+  }
+}
+
+export async function parsePdfFile(filePath: string): Promise<ParsedPdfDocument> {
+  const buffer = await readFile(filePath);
+  const pdfData = new Uint8Array(buffer);
+
+  let nativeExtraction: NativePdfExtraction;
+
+  try {
+    nativeExtraction = await extractNativeTextWithPdfParse(pdfData);
+  } catch (pdfParseError) {
+    console.warn(
+      "pdf-parse extraction failed, retrying with direct PDF.js text extraction.",
+      pdfParseError,
+    );
+    nativeExtraction = await extractNativeTextWithPdfJs(pdfData);
+  }
+
+  const pageTexts = new Map<number, string>();
+
+  for (const page of nativeExtraction.pages) {
+    pageTexts.set(page.pageNumber, page.text);
+  }
+
+  const pageNumbersNeedingOcr = Array.from(
+    { length: nativeExtraction.pageCount },
+    (_, index) => index + 1,
+  ).filter(
+    (pageNumber) =>
+      (pageTexts.get(pageNumber) ?? "").length <
+      MIN_PAGE_CHARACTERS_FOR_NATIVE_TEXT,
+  );
+
+  let ocrRecoveredPageCount = 0;
+
+  if (pageNumbersNeedingOcr.length > 0) {
+    try {
+      configureOcrDomPolyfills();
+
+      const ocrPages = await extractPdfPagesWithOcr(
+        pdfData,
+        pageNumbersNeedingOcr,
+      );
+
+      for (const ocrPage of ocrPages) {
+        const nextPageText = pickBestPageText(
+          pageTexts.get(ocrPage.pageNumber) ?? "",
+          ocrPage.text,
+        );
+
+        pageTexts.set(ocrPage.pageNumber, nextPageText);
+
+        if (nextPageText.length >= MIN_PAGE_CHARACTERS_FOR_NATIVE_TEXT) {
+          ocrRecoveredPageCount += 1;
+        }
+      }
+    } catch (error) {
+      console.error("PDF OCR Failure:", error);
+    }
+  }
+
+  const pages = Array.from({ length: nativeExtraction.pageCount }, (_, index) => ({
+    pageNumber: index + 1,
+    text: normalizeExtractedText(pageTexts.get(index + 1) ?? ""),
+  })).filter((page) => page.text.length > 0);
+
+  const text = normalizeExtractedText(
+    pages.map((page) => page.text).join("\n\n") || nativeExtraction.text || "",
+  );
+  const averageCharactersPerPage =
+    nativeExtraction.pageCount > 0
+      ? text.length / nativeExtraction.pageCount
+      : text.length;
+  const extractionMode: DocumentExtractionMode =
+    ocrRecoveredPageCount > 0
+      ? "ocr"
+      : text.length === 0 ||
+          averageCharactersPerPage < MIN_AVERAGE_DOCUMENT_CHARACTERS
+        ? "ocr-recommended"
+        : "text";
+
+  return {
+    text,
+    pageCount: nativeExtraction.pageCount,
+    extractionMode,
+    pages,
+  };
 }
