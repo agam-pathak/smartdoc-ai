@@ -15,7 +15,6 @@ import {
   Minus,
   NotebookPen,
   Plus,
-  RefreshCw,
   SearchCheck,
   Star,
 } from "lucide-react";
