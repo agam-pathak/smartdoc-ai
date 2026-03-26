@@ -35,10 +35,16 @@ export default function EditProfileModal({
     e.preventDefault();
     setIsSubmitting(true);
     try {
-      await updateProfile(name, avatar);
-      setIsOpen(false);
+      const result = await updateProfile(name, avatar);
+      if (result.success) {
+        setIsOpen(false);
+        // Fully refresh the app shell to reload the session & avatar
+        window.location.reload();
+      } else {
+        alert(result.error);
+      }
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to update profile.");
+      alert("A technical error occurred. Please try again.");
     } finally {
       setIsSubmitting(false);
     }

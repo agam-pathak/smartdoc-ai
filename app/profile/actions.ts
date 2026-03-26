@@ -10,49 +10,50 @@ import {
 } from "@/lib/auth";
 
 export async function updateProfile(name: string, avatarUrl: string) {
-  const session = await requireSession();
-  
-  if (!name.trim()) {
-    throw new Error("Name is required.");
+  try {
+    const session = await requireSession();
+    
+    if (!name.trim()) {
+      return { success: false, error: "Name is required." };
+    }
+
+    // Update backend (Supabase)
+    const updatedUser = await updateUserProfile(session.userId, { name });
+    if (!updatedUser) {
+      return { success: false, error: "User update failed. Check Supabase columns." };
+    }
+
+    const secure = process.env.NODE_ENV === "production";
+    const cookieStore = await cookies();
+
+    // Bulletproof session update
+    const { cookie } = createSessionCookie(updatedUser, secure);
+    
+    cookieStore.set(cookie.name, cookie.value, {
+      path: "/",
+      secure,
+      httpOnly: true,
+      sameSite: "lax",
+      expires: cookie.expires
+    });
+
+    // Set avatar cookie
+    cookieStore.set("lexora_avatar", avatarUrl, {
+      path: "/",
+      secure,
+      httpOnly: false,
+      sameSite: "lax",
+      maxAge: 60 * 60 * 24 * 365
+    });
+
+    // We do NOT call revalidatePath(root) here as it can crash some Vercel builds
+    // Return success and let the client handle the refresh
+    return { success: true };
+  } catch (err: any) {
+    console.error("Profile Action Error:", err);
+    return { 
+      success: false, 
+      error: err instanceof Error ? err.message : "Internal Server Error" 
+    };
   }
-
-  // Update backend (Supabase)
-  const updatedUser = await updateUserProfile(session.userId, { name });
-  if (!updatedUser) {
-    throw new Error("User update failed.");
-  }
-
-  const secure = process.env.NODE_ENV === "production";
-  const cookieStore = await cookies();
-
-  // Bulletproof cookie updates
-  const { cookie } = createSessionCookie(updatedUser, secure);
-  
-  // Set session cookie
-  cookieStore.set({
-    name: cookie.name,
-    value: cookie.value,
-    path: cookie.path,
-    secure: cookie.secure,
-    httpOnly: cookie.httpOnly,
-    sameSite: cookie.sameSite,
-    expires: cookie.expires
-  });
-
-  // Set avatar cookie
-  cookieStore.set({
-    name: "lexora_avatar",
-    value: avatarUrl,
-    path: "/",
-    secure,
-    httpOnly: false,
-    sameSite: "lax",
-    maxAge: 60 * 60 * 24 * 365
-  });
-
-  // Trigger UI updates
-  revalidatePath("/profile");
-  revalidatePath("/");
-
-  return { success: true };
 }
