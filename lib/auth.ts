@@ -440,50 +440,45 @@ export async function updateUserProfile(userId: string, updates: { name: string 
         })
         .eq("id", userId)
         .select("*")
-        .single();
+        .maybeSingle(); // Use maybeSingle to avoid throw on missing
 
       if (error) {
-        throw error;
+        console.error("Supabase profile update error:", error);
+        throw new Error("Database update failed.");
       }
 
-      // Sync to local JSON ONLY if we're not in production (Vercel is read-only)
+      if (!data) {
+        throw new Error("User record not found.");
+      }
+
+      // Silent fallback sync (ignore errors)
       if (process.env.NODE_ENV !== "production") {
         try {
           const store = await readUsersStoreFromFile();
-          const userIndex = store.users.findIndex((u) => u.id === userId);
-          if (userIndex >= 0) {
+          const userIdx = store.users.findIndex(u => u.id === userId);
+          if (userIdx >= 0) {
             const nextUsers = [...store.users];
-            nextUsers[userIndex] = {
-              ...nextUsers[userIndex],
-              name: normalizedName,
-              updatedAt: new Date().toISOString(),
-            };
+            nextUsers[userIdx] = { ...nextUsers[userIdx], name: normalizedName, updatedAt: new Date().toISOString() };
             await writeUsersStoreToFile(nextUsers);
           }
-        } catch (e) {
-          console.warn("Local JSON mirror sync failed (ignoring):", e);
-        }
+        } catch (e) {}
       }
 
       return fromStoredUserRow(data as StoredUserRow);
     }
   }
 
-  // Pure JSON fallback path
+  // Fallback for pure JSON
   const store = await readUsersStoreFromFile();
-  const userIndex = store.users.findIndex((u) => u.id === userId);
-  if (userIndex >= 0) {
+  const userIdx = store.users.findIndex(u => u.id === userId);
+  if (userIdx >= 0) {
     const nextUsers = [...store.users];
-    nextUsers[userIndex] = {
-      ...nextUsers[userIndex],
-      name: normalizedName,
-      updatedAt: new Date().toISOString(),
-    };
+    nextUsers[userIdx] = { ...nextUsers[userIdx], name: normalizedName, updatedAt: new Date().toISOString() };
     await writeUsersStoreToFile(nextUsers);
-    return nextUsers[userIndex];
+    return nextUsers[userIdx];
   }
 
-  throw new Error("User not found in datastore");
+  return null;
 }
 
 export async function authenticateUser(email: string, password: string) {

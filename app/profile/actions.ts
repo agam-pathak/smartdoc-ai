@@ -7,55 +7,52 @@ import {
   requireSession,
   updateUserProfile,
   createSessionCookie,
-  shouldUseSecureCookies,
-  getSession,
 } from "@/lib/auth";
 
 export async function updateProfile(name: string, avatarUrl: string) {
-  try {
-    const session = await requireSession();
-
-    if (!name.trim()) {
-      throw new Error("Name cannot be empty.");
-    }
-
-    const secure = process.env.NODE_ENV === "production";
-
-    // Update name in DB
-    const updatedUser = await updateUserProfile(session.userId, { name });
-
-    if (!updatedUser) {
-      throw new Error("User record not found or update failed.");
-    }
-
-    const cookieStore = await cookies();
-
-    // Update session cookie for name
-    const { cookie } = createSessionCookie(updatedUser, secure);
-    cookieStore.set(cookie);
-
-    // Update avatar cookie
-    cookieStore.set({
-      name: "lexora_avatar",
-      value: avatarUrl,
-      httpOnly: false, // Accessible from client
-      secure,
-      path: "/",
-      maxAge: 60 * 60 * 24 * 365, // 1 year
-    });
-
-    // Bust Next.js cache
-    revalidatePath("/");
-    revalidatePath("/profile");
-
-    return { success: true };
-  } catch (error) {
-    // If it's a Next.js internal error (like a redirect), re-throw it
-    if (error instanceof Error && (error.message === "NEXT_REDIRECT" || "digest" in error)) {
-      throw error;
-    }
-    
-    console.error("Profile update failed:", error);
-    throw error instanceof Error ? error : new Error("An unexpected error occurred.");
+  const session = await requireSession();
+  
+  if (!name.trim()) {
+    throw new Error("Name is required.");
   }
+
+  // Update backend (Supabase)
+  const updatedUser = await updateUserProfile(session.userId, { name });
+  if (!updatedUser) {
+    throw new Error("User update failed.");
+  }
+
+  const secure = process.env.NODE_ENV === "production";
+  const cookieStore = await cookies();
+
+  // Bulletproof cookie updates
+  const { cookie } = createSessionCookie(updatedUser, secure);
+  
+  // Set session cookie
+  cookieStore.set({
+    name: cookie.name,
+    value: cookie.value,
+    path: cookie.path,
+    secure: cookie.secure,
+    httpOnly: cookie.httpOnly,
+    sameSite: cookie.sameSite,
+    expires: cookie.expires
+  });
+
+  // Set avatar cookie
+  cookieStore.set({
+    name: "lexora_avatar",
+    value: avatarUrl,
+    path: "/",
+    secure,
+    httpOnly: false,
+    sameSite: "lax",
+    maxAge: 60 * 60 * 24 * 365
+  });
+
+  // Trigger UI updates
+  revalidatePath("/profile");
+  revalidatePath("/");
+
+  return { success: true };
 }
