@@ -516,6 +516,7 @@ export default function UploadPage() {
               <p className="text-sm leading-relaxed text-slate-500 max-w-[200px] mx-auto font-medium">Selective indexing for documents up to 25MB.</p>
               
               <input 
+                data-testid="upload-input"
                 type="file" 
                 accept=".pdf" 
                 onChange={(e) => handleFileSelection(e.target.files?.[0] || null)}
@@ -553,6 +554,7 @@ export default function UploadPage() {
            </div>
 
            <button 
+             data-testid="upload-submit"
              onClick={uploadFile}
              disabled={!selectedFile || uploading}
              className="flex w-full items-center justify-center gap-3 rounded-[2rem] bg-gradient-to-br from-cyan-500 to-blue-600 py-5 text-sm font-bold text-white shadow-xl shadow-cyan-900/20 transition hover:brightness-110 active:scale-[0.98] disabled:opacity-30 disabled:grayscale disabled:scale-100"
@@ -597,6 +599,7 @@ export default function UploadPage() {
                  </p>
                )}
                <button
+                 data-testid="open-last-indexed-document"
                  type="button"
                  onClick={() => router.push(`/chat?doc=${lastIndexedDocument.id}`)}
                  className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 px-5 py-3 text-xs font-bold uppercase tracking-widest text-white transition hover:brightness-110"

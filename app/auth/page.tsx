@@ -158,7 +158,7 @@ function AuthPageContent() {
                 <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500 ml-1">Full Name</label>
                 <div className="relative">
                   <UserRound className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-                  <input value={form.name} onChange={e => updateField("name", e.target.value)} placeholder="Agam Pathak" className="w-full rounded-2xl border border-white/10 bg-white/5 pl-11 pr-4 py-3.5 text-sm text-white outline-none focus:border-cyan-400/30" />
+                  <input data-testid="auth-name-input" value={form.name} onChange={e => updateField("name", e.target.value)} placeholder="Agam Pathak" className="w-full rounded-2xl border border-white/10 bg-white/5 pl-11 pr-4 py-3.5 text-sm text-white outline-none focus:border-cyan-400/30" />
                 </div>
               </div>
             )}
@@ -168,7 +168,7 @@ function AuthPageContent() {
                 <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500 ml-1">Email Address</label>
                 <div className="relative">
                   <Mail className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-                  <input type="email" value={form.email} onChange={e => updateField("email", e.target.value)} placeholder="name@company.com" className="w-full rounded-2xl border border-white/10 bg-white/5 pl-11 pr-4 py-3.5 text-sm text-white outline-none focus:border-cyan-400/30" />
+                  <input data-testid="auth-email-input" type="email" value={form.email} onChange={e => updateField("email", e.target.value)} placeholder="name@company.com" className="w-full rounded-2xl border border-white/10 bg-white/5 pl-11 pr-4 py-3.5 text-sm text-white outline-none focus:border-cyan-400/30" />
                 </div>
               </div>
             )}
@@ -178,7 +178,7 @@ function AuthPageContent() {
                 <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500 ml-1">{mode === "reset" ? "New Password" : "Password"}</label>
                 <div className="relative">
                   <KeyRound className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-                  <input type={showPassword ? "text" : "password"} value={form.password} onChange={e => updateField("password", e.target.value)} placeholder="••••••••" className="w-full rounded-2xl border border-white/10 bg-white/5 pl-11 pr-12 py-3.5 text-sm text-white outline-none focus:border-cyan-400/30" />
+                  <input data-testid="auth-password-input" type={showPassword ? "text" : "password"} value={form.password} onChange={e => updateField("password", e.target.value)} placeholder="••••••••" className="w-full rounded-2xl border border-white/10 bg-white/5 pl-11 pr-12 py-3.5 text-sm text-white outline-none focus:border-cyan-400/30" />
                   <button onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 text-slate-500 hover:text-white transition-colors">
                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
@@ -191,7 +191,7 @@ function AuthPageContent() {
                 <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500 ml-1">Confirm Password</label>
                 <div className="relative">
                   <LockKeyhole className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-                  <input type={showPassword ? "text" : "password"} value={form.confirmPassword} onChange={e => updateField("confirmPassword", e.target.value)} placeholder="••••••••" className="w-full rounded-2xl border border-white/10 bg-white/5 pl-11 pr-4 py-3.5 text-sm text-white outline-none focus:border-cyan-400/30" />
+                  <input data-testid="auth-confirm-password-input" type={showPassword ? "text" : "password"} value={form.confirmPassword} onChange={e => updateField("confirmPassword", e.target.value)} placeholder="••••••••" className="w-full rounded-2xl border border-white/10 bg-white/5 pl-11 pr-4 py-3.5 text-sm text-white outline-none focus:border-cyan-400/30" />
                 </div>
               </div>
             )}
@@ -202,7 +202,7 @@ function AuthPageContent() {
               </div>
             )}
 
-            <button onClick={handleSubmit} disabled={submitting} className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 py-4 text-sm font-bold text-white shadow-lg transition hover:brightness-110 disabled:opacity-30 disabled:grayscale">
+            <button data-testid="auth-submit" onClick={handleSubmit} disabled={submitting} className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 py-4 text-sm font-bold text-white shadow-lg transition hover:brightness-110 disabled:opacity-30 disabled:grayscale">
               {submitting ? <LoaderCircle className="animate-spin h-4 w-4" /> : <Sparkles className="h-4 w-4" />}
               {submitting ? "Processing..." : currentCopy.submitLabel}
             </button>

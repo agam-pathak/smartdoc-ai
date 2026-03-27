@@ -63,6 +63,7 @@ export default function ChatComposer({
 
       <div className="relative flex items-end rounded-2xl border border-white/[0.08] bg-white/[0.03] pr-2 transition-colors focus-within:border-cyan-400/30 focus-within:bg-white/[0.04]">
         <textarea
+          data-testid="chat-input"
           ref={textareaRef}
           value={question}
           onChange={(event) => onQuestionChange(event.target.value)}
@@ -83,6 +84,7 @@ export default function ChatComposer({
         />
 
         <button
+          data-testid="chat-send"
           type="button"
           onClick={onSend}
           disabled={!canAskQuestion || loading || !question.trim()}

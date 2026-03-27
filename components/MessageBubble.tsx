@@ -71,7 +71,7 @@ export default function MessageBubble({
 
   if (isUser) {
     return (
-      <div className="flex justify-end">
+      <div data-testid="user-message" className="flex justify-end">
         <div className="max-w-[min(85%,72ch)] rounded-3xl rounded-br-md border border-cyan-400/10 bg-gradient-to-br from-cyan-500/20 to-blue-600/20 px-5 py-3.5 text-sm text-slate-100 shadow-lg">
           <div className="whitespace-pre-wrap">{mainText}</div>
         </div>
@@ -90,6 +90,7 @@ export default function MessageBubble({
 
   return (
     <div 
+      data-testid="assistant-message"
       className="group relative space-y-4"
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
